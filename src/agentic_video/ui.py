@@ -172,7 +172,7 @@ def build_ui(api_url: str | None = None):
                 "camera_motion": motion,
             })
             return send(
-                "POST", f"/api/projects/{pid}/generate"
+                "POST", f"/api/projects/{pid}/shots/{shot_id}/regenerate"
             )
         return handler
 

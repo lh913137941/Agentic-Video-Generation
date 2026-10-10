@@ -134,7 +134,7 @@ class VideoEditService:
         if not self.enabled:
             raise EditingUnavailable(
                 "视频智能编辑需要启用 AVG_BACKEND=omni，"
-                "并部署支持 Video-to-Video input_reference 的模型；Mock 模式不提供 AI 编辑。"
+                "并部署支持 V2V (Video-to-Video) input_reference 的模型；Mock 模式不提供 AI 编辑。"
             )
         prompt = prompt.strip()
         if not 1 <= len(prompt) <= 3000:

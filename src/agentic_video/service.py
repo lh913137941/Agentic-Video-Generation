@@ -94,7 +94,10 @@ class VideoService:
                 ]
             else:
                 shot = self._shot(project, shot_id)
-                shot.revision += 1  # Explicit retry renders a new artifact/version.
+                # Already-edited shots have a new revision; do not increment twice.
+                # Explicit retry of a READY shot still creates a fresh revision.
+                if shot.status == ShotStatus.READY and shot.rendered_revision == shot.revision:
+                    shot.revision += 1
                 shots = [shot]
                 project.final_video_path = None
             ids = [s.id for s in shots]

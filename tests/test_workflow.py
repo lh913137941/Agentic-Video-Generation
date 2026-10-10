@@ -129,3 +129,41 @@ def test_store_recovery_and_path_traversal(tmp_path):
         assert recovered.status == ProjectStatus.FAILED
         assert recovered.shots[0].status == ShotStatus.FAILED
     asyncio.run(scenario())
+
+
+def test_targeted_retry_does_not_render_other_dirty_shots(tmp_path):
+    async def scenario():
+        backend = FakeBackend()
+        service = VideoService(
+            FileProjectStore(tmp_path), RuleStoryboardParser(),
+            backend, FakeComposer(), max_shots=5
+        )
+        project = await service.create(CreateProjectRequest(
+            script="Scene one. Scene two.", shot_count=2
+        ))
+        await service.enqueue(project.project_id)
+        await drain(service)
+        original = service.get(project.project_id)
+        assert original.status == ProjectStatus.READY
+        await service.edit(
+            project.project_id, 1, UpdateShotRequest(prompt="new first shot")
+        )
+        await service.edit(
+            project.project_id, 2, UpdateShotRequest(prompt="new second shot")
+        )
+        dirty = service.get(project.project_id)
+        target_revision = dirty.shots[0].revision
+        await service.enqueue(project.project_id, shot_id=1)
+        await drain(service)
+        after = service.get(project.project_id)
+        assert after.shots[0].revision == target_revision  # no double increment
+        assert after.shots[0].status == ShotStatus.READY
+        assert after.shots[1].status == ShotStatus.PENDING
+        assert len(backend.calls) == 3  # 2 original + only the specified target
+        assert after.status == ProjectStatus.DRAFT
+        await service.enqueue(project.project_id)
+        await drain(service)
+        assert service.get(project.project_id).status == ProjectStatus.READY
+        assert len(backend.calls) == 4
+        await service.close()
+    asyncio.run(scenario())
