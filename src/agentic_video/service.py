@@ -153,6 +153,7 @@ class VideoService:
                 project.status = ProjectStatus.DRAFT
                 self.store.save(project)
                 return
+            active_id = None  # Stitch failure is not a shot-generation failure.
             project.status = ProjectStatus.STITCHING
             self.store.save(project)
             clips = [(self.store.asset(project_id, s.video_path), s.duration)
@@ -192,7 +193,11 @@ class VideoService:
             keep.add(project.final_video_path)
         for asset in self.store.directory(project.project_id).glob("*.mp4"):
             if asset.name not in keep:
-                asset.unlink(missing_ok=True)
+                try:
+                    asset.unlink(missing_ok=True)
+                except OSError:
+                    # Cleanup is best effort; never turn a committed video into FAILED.
+                    log.warning("Unable to delete stale video %s", asset, exc_info=True)
 
     async def close(self) -> None:
         tasks = list(self._tasks)

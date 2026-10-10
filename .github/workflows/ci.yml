@@ -12,7 +12,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install project
-        run: pip install -e ".[test]"
+        run: pip install -e ".[test,ui]"
       - name: Install FFmpeg (required for integration tests)
         run: |
           sudo apt-get update -qq

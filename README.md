@@ -76,7 +76,7 @@ docs/            Expanded implementation design
 ```
 
 ```bash
-pip install -e ".[test]"
+pip install -e ".[test,ui]"
 pytest -q
 ```
 

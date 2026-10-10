@@ -21,11 +21,11 @@ class RuleStoryboardParser:
             views = ("establishing wide shot", "medium shot with subject action",
                      "close-up detail", "tracking shot", "closing wide shot")
             return [
-                ShotSpec(prompt=f"{style}. {views[i % len(views)]}. {parts[i % len(parts)]}")
+                ShotSpec(prompt=f"{views[i % len(views)]}. {parts[i % len(parts)]}")
                 for i in range(count)
             ]
         groups = parts[:count - 1] + ["; ".join(parts[count - 1:])]
-        return [ShotSpec(prompt=f"{style}. {part}") for part in groups]
+        return [ShotSpec(prompt=part) for part in groups]
 
 
 class _LLMOutput(BaseModel):
