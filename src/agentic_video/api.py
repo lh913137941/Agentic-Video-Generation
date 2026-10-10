@@ -2,12 +2,13 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, Form, UploadFile
 from fastapi.responses import FileResponse
 import uvicorn
 
 from .backends import MockVideoBackend, VllmOmniVideoBackend
 from .composer import FFmpegComposer
+from .editor import EditingUnavailable, EditJob, VideoEditService
 from .config import Settings
 from .models import (
     CreateProjectRequest, Project, ProjectStatus, ShotStatus, UpdateShotRequest,
@@ -42,19 +43,29 @@ def build_service(settings: Settings | None = None) -> VideoService:
 
 def create_app(service: VideoService | None = None) -> FastAPI:
     service = service or build_service()
+    editor = VideoEditService(
+        service.store.root / "video_edits",
+        service.backend,
+        enabled=isinstance(service.backend, VllmOmniVideoBackend),
+        generation_semaphore=service._semaphore,
+        timeout_seconds=service.job_timeout_seconds,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         service.store.recover_interrupted()
+        editor.recover_interrupted()
         try:
             yield
         finally:
+            await editor.close()
             await service.close()
 
     app = FastAPI(
         title="Agentic Video Generation", version="0.1.0", lifespan=lifespan
     )
     app.state.video_service = service
+    app.state.video_editor = editor
 
     def guard(fn, *args):
         try:
@@ -77,6 +88,57 @@ def create_app(service: VideoService | None = None) -> FastAPI:
     @app.get("/healthz")
     async def healthz():
         return {"status": "ok"}
+
+
+    @app.get("/api/capabilities")
+    async def capabilities():
+        return {
+            "storyboard_generation": True,
+            "video_edit_upload": editor.enabled,
+            "video_edit_backend": (
+                "vllm-omni-v2v" if editor.enabled else "unavailable-in-mock"
+            ),
+            "model_v2v_support_verified": False,
+            "spatial_masks": False,
+            "temporal_range_control": False,
+            "video_edit_note": (
+                "The selected vLLM-Omni model must support input_reference "
+                "video conditioning; model-specific support and temporal "
+                "preservation are not guaranteed."
+            ),
+        }
+
+    @app.post("/api/video-edits", response_model=EditJob, status_code=202)
+    async def submit_video_edit(
+        file: UploadFile = File(...), prompt: str = Form(...)
+    ):
+        try:
+            return await editor.create(file, prompt)
+        except EditingUnavailable as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/video-edits/{job_id}", response_model=EditJob)
+    async def get_video_edit(job_id: str):
+        return guard(editor.load, job_id)
+
+    @app.get("/api/video-edits/{job_id}/source")
+    async def get_video_edit_source(job_id: str):
+        return FileResponse(
+            guard(editor.asset, job_id, "source"), media_type="video/mp4",
+            filename="original.mp4",
+        )
+
+    @app.get("/api/video-edits/{job_id}/result")
+    async def get_video_edit_result(job_id: str):
+        job = guard(editor.load, job_id)
+        if job.status.value != "READY":
+            raise HTTPException(status_code=409, detail="Edited video is not ready")
+        return FileResponse(
+            guard(editor.asset, job_id, "result"), media_type="video/mp4",
+            filename="edited-video.mp4",
+        )
 
     @app.post("/api/projects", response_model=Project, status_code=201)
     async def create_project(request: CreateProjectRequest):

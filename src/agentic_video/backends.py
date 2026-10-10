@@ -52,7 +52,9 @@ class VllmOmniVideoBackend:
         self.poll_interval = poll_interval
         self.frame_stride = frame_stride
 
-    async def generate(self, prompt: str, destination: Path, duration: float) -> None:
+    async def generate(self, prompt: str, destination: Path, duration: float,
+                       input_reference: Path | None = None) -> None:
+        """Optional MP4 input_reference requires a V2V-capable deployed model."""
         destination.parent.mkdir(parents=True, exist_ok=True)
         # Not every diffusion model supports arbitrary duration; num_frames is explicit.
         # Model-specific frame-count rules must be configured for the deployed model.
@@ -75,7 +77,19 @@ class VllmOmniVideoBackend:
             timeout=httpx.Timeout(60, read=120), follow_redirects=True
         ) as client:
             try:
-                response = await client.post(self.base_url + "/v1/videos", files=fields)
+                if input_reference is not None:
+                    with input_reference.open("rb") as uploaded:
+                        payload = dict(fields)
+                        payload["input_reference"] = (
+                            "source.mp4", uploaded, "video/mp4"
+                        )
+                        response = await client.post(
+                            self.base_url + "/v1/videos", files=payload
+                        )
+                else:
+                    response = await client.post(
+                        self.base_url + "/v1/videos", files=fields
+                    )
                 response.raise_for_status()
                 job_id = response.json().get("id")
                 if not isinstance(job_id, str) or not job_id:
