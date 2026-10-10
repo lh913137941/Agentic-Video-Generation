@@ -66,6 +66,8 @@ def test_gradio_has_one_creator_no_business_tabs():
         assert len(upload_videos) == 1
         assert upload_videos[0]["props"]["sources"] == ["upload"]
         assert upload_videos[0]["props"]["format"] == "mp4"
+        assert upload_videos[0]["props"].get("height") is None
+        assert upload_videos[0]["props"]["interactive"] is True
         assert not any(
             c["type"] == "file" and "上传视频" in c["props"].get("label", "")
             for c in components
@@ -97,3 +99,14 @@ def test_video_upload_css_does_not_override_filename_contrast():
     assert ".studio-video-upload video" in stylesheet
     assert ".studio-compact-upload *" not in stylesheet
     assert "background:#fff!important" in stylesheet
+
+
+def test_video_editor_styles_allow_trim_controls():
+    from agentic_video.ui import STYLE_PATH
+    css = STYLE_PATH.read_text(encoding="utf-8")
+    block = css.split(".studio-video-upload {", 1)[1].split("}", 1)[0]
+    assert "min-height:318px" in block
+    assert "overflow:visible!important" in block
+    assert "overflow:hidden" not in block
+    assert "height:225px!important" in css
+    assert ".studio-composer-card {overflow:visible!important;}" in css

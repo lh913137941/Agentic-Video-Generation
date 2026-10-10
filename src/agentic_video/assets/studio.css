@@ -47,17 +47,23 @@ body,.gradio-container {background:var(--studio-bg)!important}
 .studio-composer-hint {color:#727e92;font-size:11px;line-height:1.6;margin-top:7px}
 /* Only style the upload surface. Never force child colors: Gradio renders
    light video controls and filename overlays using their own contrast. */
+/* Let video editor expand: height=198 plus overflow:hidden clipped trim controls. */
 .studio-video-upload {
-  border:1px solid #e1e5ef!important;border-radius:13px!important;
+  border:1px solid #e1e5ef!important;
+  border-radius:13px!important;
   background:#f5f6fc!important;
-  overflow:hidden;
+  min-height:318px;
+  overflow:visible!important;
 }
 .studio-video-upload video {
   width:100%!important;
+  height:225px!important;
+  max-height:225px!important;
   object-fit:contain!important;
   background:#171c2b!important;
   border-radius:10px!important;
 }
+.studio-composer-card {overflow:visible!important;}
 .studio-video-upload label {color:#364158!important;font-size:12px!important}
 .studio-main-prompt {border:0!important;background:transparent!important}
 .studio-main-prompt label {color:#364158!important;font-weight:670!important}

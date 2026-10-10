@@ -371,12 +371,13 @@ def build_ui(api_url: str | None = None):
                             sources=["upload"],
                             format="mp4",
                             interactive=True,
-                            height=198,
+                            # Do not constrain Gradio Video component height:
+                            # scissors/trim UI adds a filmstrip and footer.
                             elem_classes=["studio-video-upload"],
                         )
                         gr.HTML(
                             '<div class="studio-composer-hint">'
-                            '可直接预览 · 仅视频编辑使用 · ≤30 秒 / 100 MiB'
+                            '可预览，点击剪刀可裁剪 · 仅视频编辑使用 · ≤30 秒 / 100 MiB'
                             '</div>'
                         )
                     with gr.Column(scale=5, min_width=340):
