@@ -125,7 +125,7 @@ Shot: PENDING -> GENERATING -> READY
 - 推理服务与 Web/API 进程独立部署，例如 `vllm serve Wan-AI/Wan2.2-T2V-A14B-Diffusers --omni --port 8091`。
 - **POST** `/v1/videos` 是 `multipart/form-data`，提交 `prompt/width/height/fps/num_frames/num_inference_steps` 等参数；创建任务得到 `id`，并不是一次性同步 MP4。
 - **GET** `/v1/videos/{id}` 查询 `queued/in_progress/completed/failed`；completed 后 **GET** `/v1/videos/{id}/content` 下载。取消与错误时尽力 DELETE 原任务。
-- 请求的帧数/分辨率/帧率**必须符合所选模型实际支持的范围和步进**，例如不同 Wan/LTX 模型的帧数约束不完全相同；需要做真实模型适配性测试。输入生成规格和成片输出规格分开配置。
+- 请求的帧数/分辨率/帧率**必须符合所选模型实际支持的范围和步进（适配器默认以 `AVG_MODEL_FRAME_STRIDE=4` 取最近的 `4k+1` 帧数；其它模型可配置为 0 或相应步进）**，例如不同 Wan/LTX 模型的帧数约束不完全相同；需要做真实模型适配性测试。输入生成规格和成片输出规格分开配置。
 - 不在该项目中包装/假定未验证的视频推理接口。Mock 是离线真实 MP4，不是模拟服务真实模型画面。
 - `FFmpeg -c copy` 仅适用于兼容输入的流拷贝，不能承担跨模型帧率归一化、缩放、调时长、Xfade；本 MVP 显式 `fps/scale/pad/format/tpad/trim/concat` 重新编码 H.264 视频。
 - **MVP 暂不实现音频**。先保证静音镜头可靠拼接，TTS/配乐/时间戳与转场在后续里程碑实现；不要在文档中将这些规划项标为已经交付。

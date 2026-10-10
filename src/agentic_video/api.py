@@ -27,7 +27,8 @@ def build_service(settings: Settings | None = None) -> VideoService:
         if cfg.backend == "mock" else
         VllmOmniVideoBackend(
             cfg.omni_url, cfg.width, cfg.height,
-            cfg.model_fps, cfg.model_steps, cfg.job_timeout_seconds
+            cfg.model_fps, cfg.model_steps, cfg.job_timeout_seconds,
+            frame_stride=cfg.model_frame_stride
         )
     )
     composer = FFmpegComposer(

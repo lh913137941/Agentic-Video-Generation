@@ -50,6 +50,7 @@ export AVG_BACKEND=omni
 export AVG_OMNI_URL=http://127.0.0.1:8091
 # Must match your model's supported width / height / fps / frame count:
 export AVG_WIDTH=832 AVG_HEIGHT=480 AVG_MODEL_FPS=16
+export AVG_MODEL_FRAME_STRIDE=4  # Wan-style frame count 4k+1; set 0 for models without this rule
 agentic-video-api
 ```
 

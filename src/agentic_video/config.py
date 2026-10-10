@@ -19,6 +19,7 @@ class Settings:
     height: int = 480
     model_fps: int = 16
     model_steps: int = 40
+    model_frame_stride: int = 4  # 4k+1 frames for Wan; 0 disables alignment.
     output_width: int = 1280
     output_height: int = 720
     output_fps: int = 24
@@ -36,6 +37,8 @@ class Settings:
             self.model_fps, self.model_steps, self.output_width,
             self.output_height, self.output_fps, self.job_timeout_seconds,
         )
+        if self.model_frame_stride < 0:
+            raise ValueError("model_frame_stride must be >= 0")
         if any(x < 1 for x in positive) or self.max_shots > 10:
             raise ValueError("Invalid settings: positive numeric values required; max_shots <= 10")
 
@@ -56,6 +59,7 @@ class Settings:
             height=int(env.get("AVG_HEIGHT", "480")),
             model_fps=int(env.get("AVG_MODEL_FPS", "16")),
             model_steps=int(env.get("AVG_MODEL_STEPS", "40")),
+            model_frame_stride=int(env.get("AVG_MODEL_FRAME_STRIDE", "4")),
             output_width=int(env.get("AVG_OUTPUT_WIDTH", "1280")),
             output_height=int(env.get("AVG_OUTPUT_HEIGHT", "720")),
             output_fps=int(env.get("AVG_OUTPUT_FPS", "24")),

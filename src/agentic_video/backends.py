@@ -45,17 +45,20 @@ class VllmOmniVideoBackend:
     """POST multipart /v1/videos, poll, then stream /content to a local MP4."""
     def __init__(self, base_url: str, width: int, height: int,
                  fps: int, steps: int, timeout_seconds: int = 1800,
-                 poll_interval: float = 2.0):
+                 poll_interval: float = 2.0, frame_stride: int = 4):
         self.base_url = base_url.rstrip("/")
         self.width, self.height, self.fps, self.steps = width, height, fps, steps
         self.timeout_seconds = timeout_seconds
         self.poll_interval = poll_interval
+        self.frame_stride = frame_stride
 
     async def generate(self, prompt: str, destination: Path, duration: float) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         # Not every diffusion model supports arbitrary duration; num_frames is explicit.
         # Model-specific frame-count rules must be configured for the deployed model.
-        num_frames = max(1, round(duration * self.fps))
+        target_frames = max(1, round(duration * self.fps))
+        num_frames = (max(1, round((target_frames - 1) / self.frame_stride) * self.frame_stride + 1)
+                      if self.frame_stride else target_frames)
         fields = {
             "prompt": (None, prompt),
             "width": (None, str(self.width)),

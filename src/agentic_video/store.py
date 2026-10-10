@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 from uuid import UUID
-from .models import Project, ProjectStatus
+from .models import Project, ProjectStatus, ShotStatus
 
 
 class FileProjectStore:
@@ -46,7 +46,7 @@ class FileProjectStore:
                 project.error = "Process restarted during generation; retry the operation"
                 for shot in project.shots:
                     if shot.status.value == "GENERATING":
-                        shot.status = "FAILED"
+                        shot.status = ShotStatus.FAILED
                         shot.error = "Interrupted; retry generation"
                 self.save(project)
 
