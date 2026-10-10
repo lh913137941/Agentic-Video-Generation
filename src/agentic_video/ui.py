@@ -60,6 +60,25 @@ def video_edit_instruction(prompt: str) -> str:
     return prompt
 
 
+
+def video_edit_availability(info: dict) -> tuple[str, bool]:
+    """Do not confuse Omni being configured with V2V support verified."""
+    if not info.get("video_edit_upload"):
+        return (
+            "**当前为 Mock 模式：无法对上传视频进行 AI 智能编辑。** "
+            "你仍可上传预览并尝试编辑指令模板，但「生成编辑结果」已禁用。"
+            "可切换到「剧本成片」测试完整 Mock 工作流。若需真正修改原片，"
+            "请先在 API 环境设置 AVG_BACKEND=omni 和 AVG_OMNI_URL，"
+            "部署支持 V2V 的模型并重启 API，再点击「重新检测」。",
+            False,
+        )
+    return (
+        "**已配置 vLLM-Omni 后端，可提交视频编辑任务。** "
+        "但配置成功不代表实际模型支持 V2V 的 input_reference；"
+        "请先确认模型能力，生成质量、身份及原视频时序的保持均不保证。",
+        True,
+    )
+
 def build_ui(api_url: str | None = None):
     import gradio as gr
 
@@ -83,25 +102,25 @@ def build_ui(api_url: str | None = None):
             raise gr.Error(f"无法访问视频 API（{base}）：{exc}") from exc
 
     def capabilities():
+        """Enable submit only when the API allows video editing."""
         try:
             with httpx.Client(timeout=8) as client:
                 resp = client.get(base + "/api/capabilities")
                 resp.raise_for_status()
                 info = resp.json()
-            if info.get("video_edit_upload"):
-                return (
-                    "**智能编辑推理通道：已配置 vLLM-Omni。** 请确认服务端"
-                    "实际模型支持 Video-to-Video 输入；是否保持原人物与动作"
-                    "取决于模型能力，不能由界面保证。"
-                )
-            return (
-                "**当前运行于 Mock / 无视频编辑后端。** 你可以上传、预览视频并"
-                "准备编辑指令；点击「生成编辑结果」时后端会明确拒绝，而不会"
-                "将一段新生成的视频冒充为原片编辑。启用需设置 "
-                "\`AVG_BACKEND=omni\` 并部署支持 V2V 的模型。"
-            )
+            notice, enabled = video_edit_availability(info)
+            label = ("03 · 生成编辑结果" if enabled
+                     else "03 · 智能编辑未启用（请先配置后端）")
+            return notice, gr.update(interactive=enabled, value=label)
         except (httpx.HTTPError, ValueError):
-            return "**API 尚未连通。** 请先启动 \`agentic-video-api\`，再刷新页面。"
+            return (
+                "**无法连接视频 API。** 请先启动 agentic-video-api，"
+                "检查 http://127.0.0.1:8000/healthz，然后点击「重新检测」。",
+                gr.update(
+                    interactive=False,
+                    value="03 · 智能编辑未启用（API 未连接）",
+                ),
+            )
 
     def start_edit(source: str | None, prompt: str, existing: dict | None):
         if existing and existing.get("status") in ("QUEUED", "GENERATING"):
@@ -197,8 +216,10 @@ def build_ui(api_url: str | None = None):
                     "查看原片与结果 → 下载。建议首次使用 5～10 秒 MP4。"
                 )
                 capability_notice = gr.Markdown(
-                    "正在检查后端能力…", elem_classes=["studio-note"]
+                    "正在检测编辑后端；检测完成前不可提交任务。",
+                    elem_classes=["studio-note"],
                 )
+                detect_button = gr.Button("↻ 重新检测后端能力", variant="secondary")
                 edit_state = gr.State({})
                 with gr.Row(equal_height=False):
                     with gr.Column(scale=6):
@@ -238,7 +259,8 @@ def build_ui(api_url: str | None = None):
                                 "容易产生误解的假控件。"
                             )
                         submit_edit = gr.Button(
-                            "03 · 生成编辑结果", variant="primary", size="lg"
+                            "03 · 智能编辑未启用（正在检测）",
+                            variant="primary", size="lg", interactive=False,
                         )
                         gr.Markdown(
                             "提交前请确认模型支持 Video-to-Video；生成耗时、"
@@ -422,7 +444,10 @@ def build_ui(api_url: str | None = None):
         submit_edit.click(
             start_edit, [original, instruction, edit_state], edit_state
         )
-        demo.load(capabilities, outputs=capability_notice)
+        demo.load(capabilities, outputs=[capability_notice, submit_edit])
+        detect_button.click(
+            capabilities, outputs=[capability_notice, submit_edit]
+        )
         timer = gr.Timer(3)
         timer.tick(update_edit, edit_state, edit_state)
         timer.tick(update_story, story_state, story_state)

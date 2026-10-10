@@ -1,7 +1,10 @@
 """UI wiring smoke test and prompt templates."""
 import pytest
 
-from agentic_video.ui import EDIT_PRESETS, choose_edit_preset, video_edit_instruction
+from agentic_video.ui import (
+    EDIT_PRESETS, choose_edit_preset, video_edit_instruction,
+    video_edit_availability,
+)
 
 
 def test_prompt_templates_are_explicit_video_edits():
@@ -23,3 +26,23 @@ def test_gradio_components_construct():
         assert demo is not None
     finally:
         demo.close()
+
+
+
+def test_edit_submit_disabled_in_mock_mode():
+    notice, enabled = video_edit_availability({
+        "video_edit_upload": False,
+        "video_edit_backend": "unavailable-in-mock",
+    })
+    assert enabled is False
+    assert "Mock" in notice
+    assert "剧本成片" in notice
+
+
+def test_configured_omni_is_not_misrepresented_as_verified_v2v():
+    notice, enabled = video_edit_availability({
+        "video_edit_upload": True,
+        "model_v2v_support_verified": False,
+    })
+    assert enabled is True
+    assert "不代表实际模型支持 V2V" in notice
