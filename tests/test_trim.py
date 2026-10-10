@@ -41,3 +41,26 @@ def test_invalid_video_and_path(tmp_path):
     path.write_bytes(b"broken")
     with pytest.raises(ValueError):
         inspect_source(path)
+
+
+def test_missing_ffmpeg_is_actionable(monkeypatch, tmp_path):
+    from agentic_video import trim
+    path = tmp_path / "input.mp4"
+    path.write_bytes(b"fake file")
+    monkeypatch.setattr(trim.shutil, "which", lambda tool: None)
+    with pytest.raises(trim.MediaToolsUnavailable) as exc:
+        trim.inspect_source(path)
+    text = str(exc.value)
+    assert "ffmpeg/ffprobe" in text
+    assert "winget install" in text
+    assert "重启 Gradio" in text
+
+
+def test_ffprobe_missing_only_is_reported(monkeypatch):
+    from agentic_video import trim
+    monkeypatch.setattr(
+        trim.shutil, "which",
+        lambda tool: "C:/ffmpeg/bin/ffmpeg.exe" if tool == "ffmpeg" else None
+    )
+    with pytest.raises(trim.MediaToolsUnavailable, match="ffprobe"):
+        trim.check_media_tools()

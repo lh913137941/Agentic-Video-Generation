@@ -222,28 +222,36 @@ def build_ui(api_url: str | None = None):
         )
 
     def upload_changed(uploaded, state, capabilities):
-        # Validate before changing active source. All video/trim operations use
-        # an immutable path; failed clips never replace an existing source.
+        # A missing FFprobe is an environment issue, not a failed video edit.
+        # Keep the filename attached but don't send an unverified file to the
+        # preview/player or V2V backend. Show the recovery hint in the page.
         duration = None
+        warning = None
         if uploaded:
             try:
                 duration = inspect_source(uploaded)
             except ValueError as exc:
-                raise gr.Error(str(exc)) from exc
-        result = attach_video(state, uploaded)
+                warning = str(exc)
+        valid = bool(uploaded) and warning is None
+        result = attach_video(state, uploaded if valid else None)
         ceiling = max(0.2, round(duration or 30, 2))
         status = (
-            f"已加载原片 · {duration:.2f} 秒。可直接提交，或展开裁剪工具。"
-            if uploaded else "尚未上传视频 · 拖入 MP4 或点击上传"
+            f"⚠️ {warning}" if warning else
+            (f"✓ 已加载 MP4 · {duration:.2f} 秒。"
+             "可直接使用，或展开裁剪工具。" if valid
+             else "尚未上传视频 · 拖入 MP4 或点击上传")
         )
         return (
             result, _mode_description(result, capabilities),
             *_mode_buttons(result["mode"]),
             _submit_button(result, capabilities),
-            uploaded, uploaded,
-            gr.update(value=0, maximum=ceiling, interactive=bool(uploaded)),
-            gr.update(value=round(duration, 2) if uploaded else 10,
-                      maximum=ceiling, interactive=bool(uploaded)),
+            uploaded if valid else None,
+            gr.update(value=uploaded if valid else None),
+            gr.update(value=0, maximum=ceiling, interactive=valid),
+            gr.update(
+                value=round(duration, 2) if valid else 10,
+                maximum=ceiling, interactive=valid,
+            ),
             status,
         )
 
@@ -456,10 +464,11 @@ def build_ui(api_url: str | None = None):
                                     "恢复原片", variant="secondary",
                                     elem_classes=["studio-secondary-btn"],
                                 )
-                            trim_status = gr.Markdown(
-                                "尚未上传视频 · 拖入 MP4 或点击上传",
-                                elem_classes=["studio-trim-status"],
-                            )
+                        # Keep errors visible even while the trim panel is closed.
+                        trim_status = gr.Markdown(
+                            "尚未上传视频 · 拖入 MP4 或点击上传",
+                            elem_classes=["studio-trim-status"],
+                        )
                     with gr.Column(scale=5, min_width=340):
                         prompt = gr.Textbox(
                             label="你的创作想法",

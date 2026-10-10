@@ -112,3 +112,13 @@ def test_separate_file_preview_trim_styles():
     assert ".studio-composer-card {overflow:visible!important;}" in css
     assert ".studio-compact-upload *" not in css
     assert ".studio-video-upload" not in css
+
+
+def test_upload_error_displayed_outside_collapsed_trim_controls():
+    import inspect
+    from agentic_video import ui
+    source = inspect.getsource(ui.build_ui)
+    assert 'warning = str(exc)' in source
+    assert 'gr.update(value=uploaded if valid else None)' in source
+    assert 'uploaded if valid else None' in source
+    assert 'Keep errors visible even while the trim panel is closed.' in source

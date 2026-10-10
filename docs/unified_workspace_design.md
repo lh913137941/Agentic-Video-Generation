@@ -142,3 +142,25 @@ UI 控件事件：
 6. 即使 Mock 模式不支持 AI V2V，视频裁剪仍可本地执行。以上为真正的剪裁功能，非只改变 UI 播放区间。
 
 后续验收：上传前后创作框保持近似稳定高度；裁剪工具的两个滑块和按钮完全可见；裁剪片段时长确实变短、恢复后复原；如有可用 V2V 服务，确认提交上传的是裁剪 MP4。CI 只可验证 FFmpeg 结果与组件配置，真实 Windows 浏览器仍需回归截图。
+
+
+## 10. Windows FFmpeg/FFprobe 缺失后的上传体验（2026-10-10）
+
+用户上传 10.6 MB MP4 后，左侧文件条目成功显示，但视频预览出现“错误”标签，并弹出“无法分析视频，请确认已安装 FFmpeg/ffprobe”。根因是 UI 上传回调调用 `inspect_source`，它使用 `ffprobe` 检查片长和视频轨；本机工具不在运行 Gradio 的 Python PATH 中时，子进程抛出 FileNotFoundError，旧版本只给出笼统异常且文件预览的输出状态不一致。
+
+修订：
+- `trim.check_media_tools` 显式检查 `ffmpeg` 与 `ffprobe` 的系统 PATH；缺失时提示 Windows PowerShell 的 winget 安装命令、Git Bash 版本检查与重启 Gradio，而不是误报为视频内容出错。
+- 上传回调将验证失败变成素材区内的常驻说明，仍显示用户已选择的文件名，但不把未验证的本地 MP4 发给 `gr.Video`，不启用裁剪，也不让未验证原片参与 V2V 请求。
+- 上传结果提示放到折叠裁剪面板外，即使不展开也能知道原因。
+- 校验通过时继续正常预览、裁剪和后续提交；未改动原有 API 和 FFmpeg 片段处理流程。
+- 相关单测同时覆盖全部工具缺失、只有 FFprobe 缺失，以及 UI 清空不可靠预览的回调结构。
+
+恢复指引（Windows PowerShell 安装，Git Bash 验证）：
+
+    winget install --id Gyan.FFmpeg --exact
+    # 重新打开 Git Bash，激活 .venv 后
+    ffmpeg -version
+    ffprobe -version
+    python -c "import shutil; print(shutil.which('ffmpeg'), shutil.which('ffprobe'))"
+
+如果命令仍不可用，检查 FFmpeg 的 bin 路径是否已加到 Windows PATH。安装后必须重新启动 Gradio UI；仅刷新浏览器不会重置已启动 Python 进程的环境变量。
