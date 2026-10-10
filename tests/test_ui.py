@@ -58,7 +58,15 @@ def test_gradio_has_one_creator_no_business_tabs():
         components = demo.config["components"]
         types = [c["type"] for c in components]
         assert "tabs" not in types and "tabitem" not in types
-        assert any(
+        upload_videos = [
+            c for c in components
+            if c["type"] == "video"
+            and c["props"].get("label") == "上传参考视频 · MP4"
+        ]
+        assert len(upload_videos) == 1
+        assert upload_videos[0]["props"]["sources"] == ["upload"]
+        assert upload_videos[0]["props"]["format"] == "mp4"
+        assert not any(
             c["type"] == "file" and "上传视频" in c["props"].get("label", "")
             for c in components
         )
@@ -81,3 +89,11 @@ def test_gradio_has_one_creator_no_business_tabs():
         assert any("生成" in value for value in texts)
     finally:
         demo.close()
+
+
+def test_video_upload_css_does_not_override_filename_contrast():
+    from agentic_video.ui import STYLE_PATH
+    stylesheet = STYLE_PATH.read_text(encoding="utf-8")
+    assert ".studio-video-upload video" in stylesheet
+    assert ".studio-compact-upload *" not in stylesheet
+    assert "background:#fff!important" in stylesheet

@@ -358,21 +358,28 @@ def build_ui(api_url: str | None = None):
             )
             with gr.Group(elem_classes=["studio-composer-card"]):
                 with gr.Row(equal_height=False):
-                    with gr.Column(scale=1, min_width=165):
+                    with gr.Column(scale=2, min_width=270):
                         gr.HTML(
                             '<div class="studio-composer-label">'
                             '＋ 添加参考素材</div>'
                         )
-                        source = gr.File(
-                            label="上传视频 · MP4",
-                            file_types=[".mp4"], type="filepath",
-                            elem_classes=["studio-compact-upload"],
+                        # Video returns a local MP4 filepath to the existing
+                        # upload_changed / submit_workspace callbacks, while
+                        # giving a playable preview instead of a file chip.
+                        source = gr.Video(
+                            label="上传参考视频 · MP4",
+                            sources=["upload"],
+                            format="mp4",
+                            interactive=True,
+                            height=198,
+                            elem_classes=["studio-video-upload"],
                         )
                         gr.HTML(
                             '<div class="studio-composer-hint">'
-                            '仅视频编辑使用原片 · ≤30 秒 / 100 MiB</div>'
+                            '可直接预览 · 仅视频编辑使用 · ≤30 秒 / 100 MiB'
+                            '</div>'
                         )
-                    with gr.Column(scale=4, min_width=280):
+                    with gr.Column(scale=5, min_width=340):
                         prompt = gr.Textbox(
                             label="你的创作想法",
                             lines=5, max_lines=11,

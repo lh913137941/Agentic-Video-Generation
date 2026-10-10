@@ -109,3 +109,17 @@ UI 控件事件：
 6. 分镜逐镜头修改仍走原来的 PATCH + targeted regenerate API。
 7. CI 执行 Gradio 构建、路由单测、原有 FastAPI/FFmpeg Mock 与 Omni multipart 协议测试。
 8. Windows Git Bash 启动后的首屏视觉与素材交互需要用户实机验收；CI 通过不能替代真实浏览器测试。
+
+
+## 7. 2026-10-10 上传素材区显示修复
+
+用户 Windows 浏览器截图显示原 `gr.File` 文件条目为低对比度白色方块、文件名及大小几乎不可读：其直接原因是深色创作框和 Gradio 自有的浅色文件卡片混用，且 CSS `.studio-compact-upload *` 对子元素强制浅色文字。
+
+改动：
+- 以 `gr.Video(sources=["upload"], format="mp4")` 替换侧栏 `gr.File`，原片上传后可直接播放预览；组件回调仍返回本地 MP4 路径，沿用 upload_changed 和 submit_workspace。
+- 素材区宽度不低于 270 像素，避免文件预览被 165 像素窄列挤压；主 Prompt 仍占右侧更大比例。
+- 统一主创作框为干净的浅色表面和深色文本，保留紫色能力按钮，杜绝“深色边框套浅色 Gradio 内层、浅色字落到白色文件卡片”的混杂效果。
+- 移除 `.studio-compact-upload *` 全局子元素染色，视频内建播放控件由 Gradio 自己决定对比度。
+- 保留后端视频大小/长度限制；UI 上传成功不表示 AI 编辑已经生成，Mock 模式仍禁止 V2V 提交。
+
+验收：真实上传 MP4 后能看到视频预览、来源及明显的文字；切换技能时附件状态与冲突提示仍正确。CI 测试检查视频上传组件及 CSS 的危险选择器不存在；用户本机视觉验证仍必须执行。
