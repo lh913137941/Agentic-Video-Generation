@@ -26,5 +26,8 @@ agentic-video-ui = "agentic_video.ui:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+agentic_video = ["assets/*.css"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

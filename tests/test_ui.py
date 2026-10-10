@@ -24,6 +24,22 @@ def test_gradio_components_construct():
     demo = build_ui("http://127.0.0.1:8000")
     try:
         assert demo is not None
+        components = demo.config["components"]
+        cards = [
+            component for component in components
+            if component["type"] == "button"
+            and "studio-preset-card" in component["props"].get("elem_classes", [])
+        ]
+        assert len(cards) == 4
+        labels = [c["props"].get("value", "") for c in cards]
+        assert any("光影氛围" in label for label in labels)
+        assert any("替换物体" in label for label in labels)
+        assert any("清理画面" in label for label in labels)
+        assert any("镜头运动" in label for label in labels)
+        assert not any(
+            c["type"] == "dropdown" and c["props"].get("label") == "编辑指令模板"
+            for c in components
+        )
     finally:
         demo.close()
 
@@ -46,3 +62,14 @@ def test_configured_omni_is_not_misrepresented_as_verified_v2v():
     })
     assert enabled is True
     assert "不代表实际模型支持 V2V" in notice
+
+
+
+def test_ui_template_preserves_real_prompt_and_escapes_status_errors():
+    from agentic_video.ui import _job_status, _panel_head, _empty_preview
+    assert "黄昏" in choose_edit_preset("白天变黄昏 · 推荐首测")
+    assert "&lt;script&gt;" in _panel_head("01", "<script>alert(1)</script>")
+    assert "&lt;img&gt;" in _empty_preview("<img>", "preview")
+    assert "&lt;script&gt;" in _job_status({
+        "status": "FAILED", "job_id": "abc", "error": "<script>"
+    })
