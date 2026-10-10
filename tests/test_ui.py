@@ -58,20 +58,29 @@ def test_gradio_has_one_creator_no_business_tabs():
         components = demo.config["components"]
         types = [c["type"] for c in components]
         assert "tabs" not in types and "tabitem" not in types
-        upload_videos = [
+        uploads = [
             c for c in components
-            if c["type"] == "video"
+            if c["type"] == "file"
             and c["props"].get("label") == "上传参考视频 · MP4"
         ]
-        assert len(upload_videos) == 1
-        assert upload_videos[0]["props"]["sources"] == ["upload"]
-        assert upload_videos[0]["props"]["format"] == "mp4"
-        assert upload_videos[0]["props"].get("height") is None
-        assert upload_videos[0]["props"]["interactive"] is True
+        assert len(uploads) == 1
+        assert uploads[0]["props"]["file_types"] == [".mp4"]
+        assert uploads[0]["props"]["file_count"] == "single"
+        previews = [
+            c for c in components
+            if c["type"] == "video"
+            and c["props"].get("label") == "素材预览"
+        ]
+        assert len(previews) == 1
+        assert previews[0]["props"]["interactive"] is False
+        assert previews[0]["props"]["height"] == 208
         assert not any(
-            c["type"] == "file" and "上传视频" in c["props"].get("label", "")
+            c["type"] == "video" and c["props"].get("interactive") is True
             for c in components
         )
+        labels = [c["props"].get("label") for c in components]
+        assert "开始时间 · 秒" in labels
+        assert "结束时间 · 秒" in labels
         prompt_fields = [
             c for c in components
             if c["type"] == "textbox"
@@ -93,20 +102,13 @@ def test_gradio_has_one_creator_no_business_tabs():
         demo.close()
 
 
-def test_video_upload_css_does_not_override_filename_contrast():
-    from agentic_video.ui import STYLE_PATH
-    stylesheet = STYLE_PATH.read_text(encoding="utf-8")
-    assert ".studio-video-upload video" in stylesheet
-    assert ".studio-compact-upload *" not in stylesheet
-    assert "background:#fff!important" in stylesheet
-
-
-def test_video_editor_styles_allow_trim_controls():
+def test_separate_file_preview_trim_styles():
     from agentic_video.ui import STYLE_PATH
     css = STYLE_PATH.read_text(encoding="utf-8")
-    block = css.split(".studio-video-upload {", 1)[1].split("}", 1)[0]
-    assert "min-height:318px" in block
-    assert "overflow:visible!important" in block
-    assert "overflow:hidden" not in block
-    assert "height:225px!important" in css
+    assert ".studio-file-upload" in css
+    assert ".studio-video-preview video" in css
+    assert "height:208px!important" in css
+    assert ".studio-trim-tools" in css
     assert ".studio-composer-card {overflow:visible!important;}" in css
+    assert ".studio-compact-upload *" not in css
+    assert ".studio-video-upload" not in css

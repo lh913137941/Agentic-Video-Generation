@@ -45,26 +45,39 @@ body,.gradio-container {background:var(--studio-bg)!important}
 }
 .studio-composer-label {color:#29334a;font-size:13px;font-weight:740;margin-bottom:8px}
 .studio-composer-hint {color:#727e92;font-size:11px;line-height:1.6;margin-top:7px}
-/* Only style the upload surface. Never force child colors: Gradio renders
-   light video controls and filename overlays using their own contrast. */
-/* Let video editor expand: height=198 plus overflow:hidden clipped trim controls. */
-.studio-video-upload {
-  border:1px solid #e1e5ef!important;
-  border-radius:13px!important;
-  background:#f5f6fc!important;
-  min-height:318px;
+/* Separate compact file upload and stable read-only preview. No inline Gradio scissors. */
+.studio-file-upload {
+  min-height:75px;
+  background:#f9faff!important;
+  border:1px solid #dfe4f0!important;
+  border-radius:12px!important;
   overflow:visible!important;
 }
-.studio-video-upload video {
+.studio-file-upload label {font-size:12px!important;color:#3a4765!important}
+.studio-video-preview {
+  min-height:208px;
+  border:1px solid #e1e5ef!important;
+  border-radius:12px!important;
+  background:#f5f6fb!important;
+  overflow:visible!important;
+}
+.studio-video-preview video {
   width:100%!important;
-  height:225px!important;
-  max-height:225px!important;
+  height:208px!important;
+  max-height:208px!important;
   object-fit:contain!important;
   background:#171c2b!important;
   border-radius:10px!important;
 }
+.studio-trim-tools {
+  border:1px solid #e4e7f2!important;
+  background:#fff!important;
+  border-radius:12px!important;
+  overflow:visible!important;
+}
+.studio-trim-status {font-size:11px!important;color:#586582!important}
+.studio-trim-status p {font-size:11px!important;line-height:1.55}
 .studio-composer-card {overflow:visible!important;}
-.studio-video-upload label {color:#364158!important;font-size:12px!important}
 .studio-main-prompt {border:0!important;background:transparent!important}
 .studio-main-prompt label {color:#364158!important;font-weight:670!important}
 .studio-main-prompt textarea {

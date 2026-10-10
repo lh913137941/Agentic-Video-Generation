@@ -12,6 +12,7 @@ from pathlib import Path
 
 import httpx
 
+from .trim import inspect_source, trim_source_video
 from .workspace import (
     EDIT, STORY, append_event, attach_video, begin_submission, choose_mode,
     has_active_job, initial_workspace, plan_submission, update_task,
@@ -220,12 +221,59 @@ def build_ui(api_url: str | None = None):
             _submit_button(result, capabilities),
         )
 
-    def upload_changed(source, state, capabilities):
-        result = attach_video(state, source)
+    def upload_changed(uploaded, state, capabilities):
+        # Validate before changing active source. All video/trim operations use
+        # an immutable path; failed clips never replace an existing source.
+        duration = None
+        if uploaded:
+            try:
+                duration = inspect_source(uploaded)
+            except ValueError as exc:
+                raise gr.Error(str(exc)) from exc
+        result = attach_video(state, uploaded)
+        ceiling = max(0.2, round(duration or 30, 2))
+        status = (
+            f"已加载原片 · {duration:.2f} 秒。可直接提交，或展开裁剪工具。"
+            if uploaded else "尚未上传视频 · 拖入 MP4 或点击上传"
+        )
         return (
             result, _mode_description(result, capabilities),
             *_mode_buttons(result["mode"]),
             _submit_button(result, capabilities),
+            uploaded, uploaded,
+            gr.update(value=0, maximum=ceiling, interactive=bool(uploaded)),
+            gr.update(value=round(duration, 2) if uploaded else 10,
+                      maximum=ceiling, interactive=bool(uploaded)),
+            status,
+        )
+
+    def apply_trim(uploaded, first, last, state, capabilities):
+        if not uploaded:
+            raise gr.Error("请先上传原视频")
+        try:
+            cropped = trim_source_video(uploaded, first, last)
+        except (ValueError, RuntimeError) as exc:
+            raise gr.Error(str(exc)) from exc
+        result = attach_video(state, cropped)
+        result = append_event(
+            result, f"已将原片裁剪为 {first:.2f}～{last:.2f} 秒片段"
+        )
+        return (
+            cropped, cropped, result,
+            _mode_description(result, capabilities),
+            *_mode_buttons(EDIT), _submit_button(result, capabilities),
+            f"✓ 已裁剪为 {last - first:.2f} 秒，右侧预览及后续提交均使用裁剪片段。",
+        )
+
+    def restore_source(uploaded, state, capabilities):
+        if not uploaded:
+            raise gr.Error("请先上传原视频")
+        result = attach_video(state, uploaded)
+        result = append_event(result, "已恢复使用原始视频")
+        return (
+            uploaded, uploaded, result, _mode_description(result, capabilities),
+            *_mode_buttons(EDIT), _submit_button(result, capabilities),
+            "✓ 已恢复原始上传视频。",
         )
 
     def apply_preset(name, state, capabilities):
@@ -335,6 +383,7 @@ def build_ui(api_url: str | None = None):
         options["css"] = STYLE_PATH.read_text(encoding="utf-8")
     with gr.Blocks(**options) as demo:
         workspace = gr.State(initial_workspace())
+        selected_source = gr.State(None)
         capability_state = gr.State({
             "connected": False, "video_edit_upload": False
         })
@@ -363,23 +412,54 @@ def build_ui(api_url: str | None = None):
                             '<div class="studio-composer-label">'
                             '＋ 添加参考素材</div>'
                         )
-                        # Video returns a local MP4 filepath to the existing
-                        # upload_changed / submit_workspace callbacks, while
-                        # giving a playable preview instead of a file chip.
-                        source = gr.Video(
+                        # The file input stays compact. A read-only preview
+                        # deliberately has no Gradio scissors editor: its
+                        # buttons were clipped inside this narrow composer.
+                        source = gr.File(
                             label="上传参考视频 · MP4",
-                            sources=["upload"],
-                            format="mp4",
-                            interactive=True,
-                            # Do not constrain Gradio Video component height:
-                            # scissors/trim UI adds a filmstrip and footer.
-                            elem_classes=["studio-video-upload"],
+                            file_types=[".mp4"], file_count="single",
+                            type="filepath",
+                            elem_classes=["studio-file-upload"],
+                        )
+                        preview = gr.Video(
+                            label="素材预览", interactive=False,
+                            height=208,
+                            elem_classes=["studio-video-preview"],
                         )
                         gr.HTML(
                             '<div class="studio-composer-hint">'
-                            '可预览，点击剪刀可裁剪 · 仅视频编辑使用 · ≤30 秒 / 100 MiB'
+                            '上传后可预览 · 需要截取片段请展开下方裁剪工具'
                             '</div>'
                         )
+                        with gr.Accordion(
+                            "✂ 裁剪视频片段（可选）", open=False,
+                            elem_classes=["studio-trim-tools"],
+                        ):
+                            gr.Markdown(
+                                "使用明确的起止时间裁剪 MP4，不依赖内置剪刀弹层。"
+                                "裁剪后预览和 AI 编辑都会使用新的片段。"
+                            )
+                            trim_start = gr.Slider(
+                                0, 30, value=0, step=0.1,
+                                label="开始时间 · 秒", interactive=False,
+                            )
+                            trim_end = gr.Slider(
+                                0, 30, value=10, step=0.1,
+                                label="结束时间 · 秒", interactive=False,
+                            )
+                            with gr.Row():
+                                trim_button = gr.Button(
+                                    "应用裁剪", variant="secondary",
+                                    elem_classes=["studio-secondary-btn"],
+                                )
+                                restore_button = gr.Button(
+                                    "恢复原片", variant="secondary",
+                                    elem_classes=["studio-secondary-btn"],
+                                )
+                            trim_status = gr.Markdown(
+                                "尚未上传视频 · 拖入 MP4 或点击上传",
+                                elem_classes=["studio-trim-status"],
+                            )
                     with gr.Column(scale=5, min_width=340):
                         prompt = gr.Textbox(
                             label="你的创作想法",
@@ -478,7 +558,7 @@ def build_ui(api_url: str | None = None):
                         gr.HTML(
                             '<div class="studio-card-title">▶ 作品预览与结果</div>'
                         )
-                        @gr.render(inputs=[workspace, source])
+                        @gr.render(inputs=[workspace, selected_source])
                         def result_panel(state, uploaded):
                             mode = state.get("active", STORY)
                             if mode == EDIT:
@@ -665,6 +745,25 @@ def build_ui(api_url: str | None = None):
             outputs=[
                 workspace, capability_notice,
                 edit_button, story_button, submit_button,
+                selected_source, preview, trim_start, trim_end, trim_status,
+            ],
+        )
+        trim_button.click(
+            fn=apply_trim,
+            inputs=[
+                source, trim_start, trim_end, workspace, capability_state,
+            ],
+            outputs=[
+                selected_source, preview, workspace, capability_notice,
+                edit_button, story_button, submit_button, trim_status,
+            ],
+        )
+        restore_button.click(
+            fn=restore_source,
+            inputs=[source, workspace, capability_state],
+            outputs=[
+                selected_source, preview, workspace, capability_notice,
+                edit_button, story_button, submit_button, trim_status,
             ],
         )
         for name, button in preset_buttons:
@@ -679,7 +778,7 @@ def build_ui(api_url: str | None = None):
         submit_button.click(
             fn=submit_workspace,
             inputs=[
-                workspace, source, prompt, style, shot_count, capability_state,
+                workspace, selected_source, prompt, style, shot_count, capability_state,
             ],
             outputs=[workspace, capability_notice, submit_button],
         )
