@@ -283,7 +283,7 @@ def build_ui(api_url: str | None = None):
                             if status == "READY":
                                 gr.Markdown(
                                     f"[↓ 下载编辑后的 MP4]"
-                                    f"({base}/api/video-edits/{job_id}/result)"
+                                    f"({base}/api/video-edits/{job_id}/result?download=1)"
                                 )
                             gr.Markdown(
                                 "对照检查：人物身份、动作、镜头运动、"
@@ -331,7 +331,7 @@ def build_ui(api_url: str | None = None):
                                     value=url, label="当前粗剪 MP4",
                                     interactive=False,
                                 )
-                                gr.Markdown(f"[↓ 下载粗剪视频]({url})")
+                                gr.Markdown(f"[↓ 下载粗剪视频]({url}?download=1)")
                             else:
                                 gr.Markdown(
                                     "镜头生成后会自动拼接。编辑分镜后，"

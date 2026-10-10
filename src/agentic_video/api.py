@@ -124,20 +124,22 @@ def create_app(service: VideoService | None = None) -> FastAPI:
         return guard(editor.load, job_id)
 
     @app.get("/api/video-edits/{job_id}/source")
-    async def get_video_edit_source(job_id: str):
+    async def get_video_edit_source(job_id: str, download: bool = False):
         return FileResponse(
             guard(editor.asset, job_id, "source"), media_type="video/mp4",
             filename="original.mp4",
+            content_disposition_type="attachment" if download else "inline",
         )
 
     @app.get("/api/video-edits/{job_id}/result")
-    async def get_video_edit_result(job_id: str):
+    async def get_video_edit_result(job_id: str, download: bool = False):
         job = guard(editor.load, job_id)
         if job.status.value != "READY":
             raise HTTPException(status_code=409, detail="Edited video is not ready")
         return FileResponse(
             guard(editor.asset, job_id, "result"), media_type="video/mp4",
             filename="edited-video.mp4",
+            content_disposition_type="attachment" if download else "inline",
         )
 
     @app.post("/api/projects", response_model=Project, status_code=201)
@@ -165,15 +167,16 @@ def create_app(service: VideoService | None = None) -> FastAPI:
         return await async_guard(service.enqueue(project_id, shot_id))
 
     @app.get("/api/projects/{project_id}/video")
-    async def get_video(project_id: str):
+    async def get_video(project_id: str, download: bool = False):
         project = guard(service.get, project_id)
         if project.status != ProjectStatus.READY or not project.final_video_path:
             raise HTTPException(409, detail="Current cut is not ready")
         path = guard(service.store.asset, project_id, project.final_video_path)
-        return FileResponse(path, media_type="video/mp4", filename="rough-cut.mp4")
+        return FileResponse(path, media_type="video/mp4", filename="rough-cut.mp4",
+                            content_disposition_type="attachment" if download else "inline")
 
     @app.get("/api/projects/{project_id}/shots/{shot_id}/video")
-    async def get_shot_video(project_id: str, shot_id: int):
+    async def get_shot_video(project_id: str, shot_id: int, download: bool = False):
         project = guard(service.get, project_id)
         shot = guard(service._shot, project, shot_id)
         if (
@@ -182,7 +185,8 @@ def create_app(service: VideoService | None = None) -> FastAPI:
         ):
             raise HTTPException(409, detail="Current shot is not ready")
         path = guard(service.store.asset, project_id, shot.video_path)
-        return FileResponse(path, media_type="video/mp4", filename=f"shot-{shot_id}.mp4")
+        return FileResponse(path, media_type="video/mp4", filename=f"shot-{shot_id}.mp4",
+                            content_disposition_type="attachment" if download else "inline")
 
     return app
 

@@ -52,9 +52,12 @@ def test_upload_edit_poll_and_download(tmp_path):
         assert client.get(
             f"/api/video-edits/{job_id}/source"
         ).content == original.read_bytes()
-        assert client.get(
-            f"/api/video-edits/{job_id}/result"
-        ).content == b"v2v-result"
+        inline = client.get(f"/api/video-edits/{job_id}/result")
+        attachment = client.get(f"/api/video-edits/{job_id}/result?download=1")
+        assert inline.content == b"v2v-result"
+        assert inline.headers["content-disposition"].startswith("inline;")
+        assert attachment.content == b"v2v-result"
+        assert attachment.headers["content-disposition"].startswith("attachment;")
         assert client.get("/api/video-edits/no-such-job").status_code == 404
 
 
