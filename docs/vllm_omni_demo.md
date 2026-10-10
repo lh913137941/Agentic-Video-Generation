@@ -163,3 +163,16 @@ Shot: PENDING -> GENERATING -> READY
 7. 真机性能：记录 prompt、`num_frames`、FPS、显存峰值、任务时延、最终 MP4；不能以 Mock 结果替代模型验收。
 
 **进一步的原则**：先让事实与实现一致，再逐个解除规划项。不要用“100% 演示稳定”的绝对表述替代真实模型的风险评估。
+
+
+---
+
+## 8. 2026-10-10 UI 更新：独立智能编辑工作台
+
+**依据**：用户提供的《即梦 AI 视频智能编辑：快速体验操作指南》（2026-10-10 版），按“已有视频上传 → 编辑指令 → 生成 → 原片对比 → 导出”的交互顺序搭建 UI，**并非接入即梦 AI 服务**。具体映射见 [UI 工作流设计](ui_workflow.md)。
+
+新增 Gradio 「智能编辑 · 已有视频」工作区，与此前「剧本成片」分开，避免用户把 Text-to-Video 误当成原视频的定向修改。前者支持上传 MP4、测试指令模板、任务状态与原片/结果对比。通过 multipart input_reference 调用 vLLM-Omni /v1/videos 的视频条件输入能力，只有使用支持 V2V 的模型时才可能成功。Mock 模式严禁假装完成了已有视频的 AI 修改。
+
+HTTP 增量：POST /api/video-edits（上传及 prompt），GET /api/video-edits/{id}（状态），GET /api/video-edits/{id}/source 和 /result（预览/导出），GET /api/capabilities（实际部署模式）。新增 VideoEditService，沿用单进程异步任务、并发限流、原子 JSON 及重启失败标注。上传需要真实 MP4 容器和视频轨，限制 100 MiB、30 秒；视频编辑不使用任意 URL 下载。
+
+**暂不实现/不保证**：区域 Mask、时间段的严格像素级编辑、角色动作完全不变或模型一致性验证。指南中的“白天改黄昏”只是编辑期望和测试标准，不能凭 prompt 保证时序不变。浏览器默认本机访问；公网部署前需加鉴权与资源配额。
