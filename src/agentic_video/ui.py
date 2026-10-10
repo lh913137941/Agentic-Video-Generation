@@ -322,12 +322,18 @@ def build_ui(api_url: str | None = None):
         result = update_task(state, STORY, updated)
         return append_event(result, f"已提交镜头 {shot_id:02d} 的重新生成")
 
-    with gr.Blocks(
-        title="Agentic Video Studio · 创作工作台",
-        theme=gr.themes.Soft(primary_hue="violet", neutral_hue="slate"),
-        css=STYLE_PATH.read_text(encoding="utf-8"),
-        elem_id="studio-app",
-    ) as demo:
+    # Gradio 6 configures CSS/theme at launch; Gradio 5 does so in Blocks.
+    version = int(gr.__version__.split(".")[0])
+    options = {
+        "title": "Agentic Video Studio · 创作工作台",
+        "elem_id": "studio-app",
+    }
+    if version < 6:
+        options["theme"] = gr.themes.Soft(
+            primary_hue="violet", neutral_hue="slate",
+        )
+        options["css"] = STYLE_PATH.read_text(encoding="utf-8")
+    with gr.Blocks(**options) as demo:
         workspace = gr.State(initial_workspace())
         capability_state = gr.State({
             "connected": False, "video_edit_upload": False
@@ -388,7 +394,7 @@ def build_ui(api_url: str | None = None):
                         elem_classes=["studio-skill-chip"],
                     )
                     submit_button = gr.Button(
-                        "正在连接 API…", variant="primary",
+                        "✦ 生成作品 · 正在连接…", variant="primary",
                         interactive=False, elem_classes=["studio-send-button"],
                     )
                 capability_notice = gr.Markdown(
@@ -694,7 +700,14 @@ def build_ui(api_url: str | None = None):
 
 
 def main():
-    build_ui().launch(server_name="127.0.0.1", server_port=7860)
+    import gradio as gr
+    options = {"server_name": "127.0.0.1", "server_port": 7860}
+    if int(gr.__version__.split(".")[0]) >= 6:
+        options["theme"] = gr.themes.Soft(
+            primary_hue="violet", neutral_hue="slate",
+        )
+        options["css"] = STYLE_PATH.read_text(encoding="utf-8")
+    build_ui().launch(**options)
 
 
 if __name__ == "__main__":
