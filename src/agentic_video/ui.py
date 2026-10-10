@@ -6,6 +6,7 @@ only for layout and presentation. Model V2V support is never assumed.
 from __future__ import annotations
 
 import html
+from functools import partial
 import os
 from pathlib import Path
 
@@ -54,6 +55,17 @@ STATUS_LABELS = {
 
 def choose_edit_preset(name: str) -> str:
     return EDIT_PRESETS.get(name, "")
+
+
+def selected_preset_cards(name: str) -> tuple[str, str, tuple[bool, ...]]:
+    """Select one template without submitting a render or changing the media."""
+    if name not in EDIT_PRESETS:
+        raise ValueError("Unknown edit template")
+    return (
+        EDIT_PRESETS[name],
+        f"✓ 已选择「{name}」。下方指令可继续自由编辑。",
+        tuple(item[0] == name for item in PRESET_CARDS),
+    )
 
 
 def video_edit_instruction(prompt: str) -> str:
@@ -301,13 +313,14 @@ def build_ui(api_url: str | None = None):
                                         with gr.Column(min_width=150):
                                             button = gr.Button(
                                                 f"{heading}\n{tagline}",
-                                                variant="secondary",
+                                                variant="primary" if key == PRESET_CARDS[0][0]
+                                                else "secondary",
                                                 size="md",
                                                 elem_classes=["studio-preset-card"],
                                             )
                                             preset_buttons.append((key, button))
                             selected = gr.Markdown(
-                                "已填入「白天变黄昏」示例，可继续自由修改。",
+                                "✓ 已选择「白天变黄昏 · 推荐首测」。下方指令可继续自由编辑。",
                                 elem_classes=["studio-hint"],
                             )
                             instruction = gr.Textbox(
@@ -318,14 +331,26 @@ def build_ui(api_url: str | None = None):
                                 placeholder="描述要改变什么，以及必须保持不变的内容…",
                                 elem_classes=["studio-textarea"],
                             )
+                            def select_template(name: str):
+                                prompt, caption, highlighted = selected_preset_cards(name)
+                                return (
+                                    prompt,
+                                    caption,
+                                    *[
+                                        gr.update(
+                                            variant="primary" if active else "secondary"
+                                        )
+                                        for active in highlighted
+                                    ],
+                                )
+
                             for key, button in preset_buttons:
                                 button.click(
-                                    fn=lambda name=key: (
-                                        choose_edit_preset(name),
-                                        f"已填入「{name}」，可在下方继续修改。",
-                                    ),
+                                    fn=partial(select_template, key),
                                     inputs=[],
-                                    outputs=[instruction, selected],
+                                    outputs=[instruction, selected] + [
+                                        item_button for _, item_button in preset_buttons
+                                    ],
                                     show_progress="hidden",
                                 )
                             gr.HTML(

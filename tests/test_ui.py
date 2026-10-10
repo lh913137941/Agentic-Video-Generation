@@ -3,7 +3,7 @@ import pytest
 
 from agentic_video.ui import (
     EDIT_PRESETS, choose_edit_preset, video_edit_instruction,
-    video_edit_availability,
+    video_edit_availability, selected_preset_cards, PRESET_CARDS,
 )
 
 
@@ -73,3 +73,17 @@ def test_ui_template_preserves_real_prompt_and_escapes_status_errors():
     assert "&lt;script&gt;" in _job_status({
         "status": "FAILED", "job_id": "abc", "error": "<script>"
     })
+
+
+def test_preset_selection_highlights_only_selected_card():
+    first = PRESET_CARDS[0][0]
+    second = PRESET_CARDS[1][0]
+    first_prompt, first_caption, first_states = selected_preset_cards(first)
+    next_prompt, next_caption, next_states = selected_preset_cards(second)
+    assert first_prompt == choose_edit_preset(first)
+    assert next_prompt == choose_edit_preset(second)
+    assert first_states == (True, False, False, False)
+    assert next_states == (False, True, False, False)
+    assert "已选择" in first_caption and "已选择" in next_caption
+    with pytest.raises(ValueError):
+        selected_preset_cards("not available")
