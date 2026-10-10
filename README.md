@@ -18,7 +18,7 @@ agentic-video-api
 agentic-video-ui
 ```
 
-Open `http://127.0.0.1:7860` for two distinct workspaces: **「智能编辑 · 已有视频」** (upload-first, requires V2V backend) and **「剧本成片」** (the existing GPU-free Mock rough-cut). In the storyboard workspace, create a storyboard, generate, edit a shot, and regenerate only that shot. API schema: `http://127.0.0.1:8000/docs`.
+Open `http://127.0.0.1:7860` for the **single-page conversational creator workspace**. Upload an MP4 and explicitly choose **视频编辑** (requires a real V2V-capable backend), or type a script and choose **创作分镜** (works in Mock mode). The same page shows status events, video comparison, rough-cut preview and targeted shot regeneration. Uploaded MP4 files are never silently ignored by the storyboard workflow. API schema: `http://127.0.0.1:8000/docs`.
 
 Mock mode (`AVG_BACKEND=mock`) is the default and creates playable silent color clips using FFmpeg; it does **not** generate AI visuals.
 
@@ -54,7 +54,7 @@ export AVG_MODEL_FRAME_STRIDE=4  # Wan-style frame count 4k+1; set 0 for models 
 agentic-video-api
 ```
 
-For the upload-first editor, select **a V2V-capable model** and upload a valid MP4 (maximum 30 seconds and 100 MiB). The editor sends an `input_reference` file with the prompt; not every vLLM-Omni model supports V2V. Use `GET /api/capabilities` to check UI/backend mode. In Mock mode, this editor is deliberately unavailable rather than silently fabricating an edit. See [UI workflow design](docs/ui_workflow.md).
+For the upload-first editor, select **a V2V-capable model** and upload a valid MP4 (maximum 30 seconds and 100 MiB). The editor sends an `input_reference` file with the prompt; not every vLLM-Omni model supports V2V. Use `GET /api/capabilities` to check UI/backend mode. In Mock mode, this editor is deliberately unavailable rather than silently fabricating an edit. See [unified creator workspace design](docs/unified_workspace_design.md) and [original UI guide mapping](docs/ui_workflow.md).
 
 The adapter **POSTs multipart** to `/v1/videos`, polls `GET /v1/videos/{id}`, and downloads `/content`. The chosen model must accept the configured frame-count sequence and resolution. No GPU end-to-end validation is claimed in this repository scaffold.
 
@@ -65,7 +65,9 @@ See [`.env.example`](.env.example) for configuration. `AVG_DATA_DIR` defaults to
 ```text
 src/agentic_video/
   api.py         HTTP endpoints and dependency assembly
-  ui.py          Gradio storyboard card UI
+  ui.py          Single-page conversational creator composer
+  workspace.py   Frontend session state and explicit workflow routing
+  assets/        CSS theme
   service.py     Job/state/revision orchestration
   models.py      Pydantic contracts
   parsers.py     Rule-based and LLM storyboard parsers

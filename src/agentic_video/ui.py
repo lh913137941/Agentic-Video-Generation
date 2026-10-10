@@ -1,16 +1,23 @@
-"""Creator-first Gradio workbench: smart edit and storyboard rough-cut.
+"""Unified single-page creator composer and contextual project workspace.
 
-The UI keeps Gradio controls for real interactions and uses static HTML/CSS
-only for layout and presentation. Model V2V support is never assumed.
+Interactive UI controls are Gradio components. The conversation timeline is
+UI feedback, not an LLM agent or persistent unified backend project.
 """
 from __future__ import annotations
 
 import html
-from functools import partial
 import os
+from functools import partial
 from pathlib import Path
 
 import httpx
+
+from .workspace import (
+    EDIT, STORY, append_event, attach_video, begin_submission, choose_mode,
+    has_active_job, initial_workspace, plan_submission, update_task,
+)
+
+STYLE_PATH = Path(__file__).resolve().parent / "assets" / "studio.css"
 
 EDIT_PRESETS = {
     "白天变黄昏 · 推荐首测": (
@@ -32,24 +39,20 @@ EDIT_PRESETS = {
         "将原有固定镜头改为缓慢向前推进的电影镜头，画面自然稳定。"
     ),
 }
-
-# Each suggestion is a real button, not a dropdown option or an inert HTML card.
 PRESET_CARDS = (
-    ("白天变黄昏 · 推荐首测", "🌇  光影氛围", "白天 → 黄昏"),
-    ("替换桌上马克杯", "☕  替换物体", "马克杯 → 玻璃杯"),
-    ("移除背景垃圾桶", "✦  清理画面", "移除指定物体"),
-    ("缓慢推近镜头 · 探索", "◈  镜头运动", "固定机位 → 缓慢推进"),
+    ("白天变黄昏 · 推荐首测", "🌇 黄昏光影"),
+    ("替换桌上马克杯", "☕ 替换物体"),
+    ("移除背景垃圾桶", "✦ 移除物体"),
+    ("缓慢推近镜头 · 探索", "◈ 镜头推进"),
 )
-
-STYLE_PATH = Path(__file__).resolve().parent / "assets" / "studio.css"
 STATUS_LABELS = {
     "QUEUED": ("排队中", "running"),
     "GENERATING": ("生成中", "running"),
-    "READY": ("已完成", "ready"),
-    "FAILED": ("生成失败", "failed"),
-    "DRAFT": ("待生成", ""),
     "STITCHING": ("正在合成", "running"),
-    "PENDING": ("等待生成", ""),
+    "READY": ("已完成", "ready"),
+    "FAILED": ("执行失败", "failed"),
+    "DRAFT": ("分镜待生成", ""),
+    "PENDING": ("待生成", ""),
 }
 
 
@@ -57,19 +60,7 @@ def choose_edit_preset(name: str) -> str:
     return EDIT_PRESETS.get(name, "")
 
 
-def selected_preset_cards(name: str) -> tuple[str, str, tuple[bool, ...]]:
-    """Select one template without submitting a render or changing the media."""
-    if name not in EDIT_PRESETS:
-        raise ValueError("Unknown edit template")
-    return (
-        EDIT_PRESETS[name],
-        f"✓ 已选择「{name}」。下方指令可继续自由编辑。",
-        tuple(item[0] == name for item in PRESET_CARDS),
-    )
-
-
 def video_edit_instruction(prompt: str) -> str:
-    """Validate instruction without silently rewriting preservation constraints."""
     prompt = (prompt or "").strip()
     if not prompt:
         raise ValueError("请先输入编辑指令")
@@ -79,55 +70,99 @@ def video_edit_instruction(prompt: str) -> str:
 
 
 def video_edit_availability(info: dict) -> tuple[str, bool]:
-    """Distinguish a configured API from verified V2V model capabilities."""
     if not info.get("video_edit_upload"):
         return (
-            "**当前是 Mock 模式 · 智能编辑暂不可用。** "
-            "可以上传素材、调整指令并熟悉工作台；真正修改原视频需要部署 "
-            "V2V 模型，设置 AVG_BACKEND=omni 与 AVG_OMNI_URL，然后重启 API。"
-            "需要立即体验现有能力，请切换到「剧本成片」。",
+            "当前为 Mock 模式：可体验剧本分镜，但不能对上传视频做 AI 编辑。"
+            "真正视频编辑需在后端部署支持 V2V 的模型。",
             False,
         )
     return (
-        "**vLLM-Omni 推理接口已配置。** 可以提交编辑任务，"
-        "但不代表实际模型支持 V2V 的 input_reference；"
-        "请先确认模型能力，原片人物、动作和时序能否保持取决于模型。",
+        "Omni 推理接口已配置，但不代表实际模型支持 V2V 的 "
+        "input_reference；请先确认模型能力。",
         True,
     )
 
 
-def _panel_head(step: str, title: str, detail: str = "") -> str:
-    return (
-        '<div class="studio-pane-title">'
-        f'<span class="studio-pane-index">{html.escape(step)}</span>'
-        '<div>'
-        f'<h3>{html.escape(title)}</h3>'
-        f'<p>{html.escape(detail)}</p>'
-        '</div></div>'
-    )
-
-
-def _empty_preview(title: str, detail: str, mark: str = "▶") -> str:
+def _empty_preview(title: str, detail: str, icon: str = "▧") -> str:
     return (
         '<div class="studio-result-shell">'
-        f'<div class="empty-mark">{html.escape(mark)}</div>'
+        f'<div class="empty-mark">{html.escape(icon)}</div>'
         f'<strong>{html.escape(title)}</strong>'
-        f'<span>{html.escape(detail)}</span>'
-        '</div>'
+        f'<span>{html.escape(detail)}</span></div>'
     )
 
 
-def _job_status(state: dict) -> str:
-    status = str(state.get("status", "DRAFT"))
-    label, flavor = STATUS_LABELS.get(status, (status, ""))
-    identifier = html.escape(str(state.get("job_id") or state.get("project_id") or "")[:8])
-    error = html.escape(str(state.get("error") or ""))
+def _status_chip(item: dict | None) -> str:
+    status = str((item or {}).get("status", "DRAFT"))
+    label, color = STATUS_LABELS.get(status, (status, ""))
+    error = html.escape(str((item or {}).get("error") or ""))
     return (
         '<div class="studio-result-meta">'
-        f'<span class="studio-status-chip {flavor}">{html.escape(label)}</span>'
-        f'<small>任务 {identifier}</small>'
-        '</div>'
-        + (f'<p class="studio-hint">错误：{error}</p>' if error else "")
+        f'<span class="studio-status-chip {color}">{html.escape(label)}</span>'
+        + (f'<small>{error}</small>' if error else "")
+        + '</div>'
+    )
+
+
+def _timeline_html(events: list[dict], mode: str) -> str:
+    if not events:
+        return (
+            '<div class="studio-empty-conversation">'
+            '<div class="studio-sparkle">✦</div>'
+            '<b>创作记录将在这里出现</b>'
+            '<p>上传素材或输入剧本，选择技能，然后开始创作。</p>'
+            '</div>'
+        )
+    parts = []
+    for event in events[-12:]:
+        role = "user" if event.get("role") == "user" else "system"
+        marker = "你" if role == "user" else "✦"
+        parts.append(
+            f'<div class="studio-chat-line {role}">'
+            f'<div class="studio-chat-avatar">{marker}</div>'
+            '<div class="studio-chat-bubble">'
+            f'{html.escape(str(event.get("message", "")))}</div></div>'
+        )
+    return '<div class="studio-conversation">' + "".join(parts) + '</div>'
+
+
+def _mode_description(state: dict, capabilities: dict) -> str:
+    mode = state.get("mode", STORY)
+    connected = capabilities.get("connected", False)
+    if not connected:
+        return "尚未连接 API，请先启动后端。"
+    if mode == EDIT:
+        notice, _ = video_edit_availability(capabilities)
+        return notice
+    if state.get("source_name"):
+        return "创作分镜当前不使用视频参考，请先移除上传的 MP4 或切换视频编辑。"
+    return "剧本 → 分镜 → 镜头生成 → 粗剪合成。Mock 模式也能体验完整流程。"
+
+
+def _submit_button(state: dict, capabilities: dict):
+    import gradio as gr
+    mode = state.get("mode", STORY)
+    connected = bool(capabilities.get("connected"))
+    if not connected:
+        return gr.update(interactive=False, value="API 未连接")
+    if mode == EDIT:
+        if not capabilities.get("video_edit_upload"):
+            return gr.update(interactive=False, value="视频编辑需要 V2V 模型")
+        if has_active_job(state, EDIT):
+            return gr.update(interactive=False, value="视频正在生成…")
+        return gr.update(interactive=True, value="✦ 生成编辑视频")
+    if state.get("source_name"):
+        return gr.update(interactive=False, value="请先移除视频素材")
+    if has_active_job(state, STORY):
+        return gr.update(interactive=False, value="正在生成分镜粗剪…")
+    return gr.update(interactive=True, value="✦ 生成分镜粗剪")
+
+
+def _mode_buttons(mode: str):
+    import gradio as gr
+    return (
+        gr.update(variant="primary" if mode == EDIT else "secondary"),
+        gr.update(variant="primary" if mode == STORY else "secondary"),
     )
 
 
@@ -149,509 +184,512 @@ def build_ui(api_url: str | None = None):
                 detail = exc.response.json().get("detail", exc.response.text)
             except ValueError:
                 detail = exc.response.text
-            raise gr.Error(f"请求失败（{exc.response.status_code}）：{detail}") from exc
+            raise gr.Error(
+                f"请求失败（{exc.response.status_code}）：{detail}"
+            ) from exc
         except httpx.RequestError as exc:
             raise gr.Error(f"无法访问视频 API（{base}）：{exc}") from exc
 
-    def capabilities():
+    def detect_capabilities(state):
         try:
             with httpx.Client(timeout=8) as client:
                 response = client.get(base + "/api/capabilities")
                 response.raise_for_status()
-                info = response.json()
-            notice, enabled = video_edit_availability(info)
-            return notice, gr.update(
-                interactive=enabled,
-                value="开始智能编辑 →" if enabled else "智能编辑暂不可用 · 请先配置模型",
-            )
+                data = response.json()
+                capabilities = {
+                    "connected": True,
+                    "video_edit_upload": bool(data.get("video_edit_upload")),
+                    "model_v2v_support_verified":
+                        bool(data.get("model_v2v_support_verified")),
+                }
         except (httpx.HTTPError, ValueError):
-            return (
-                "**API 未连接。** 启动 agentic-video-api 并确认 "
-                "http://127.0.0.1:8000/healthz 可访问，然后重新检测。",
-                gr.update(
-                    interactive=False, value="智能编辑暂不可用 · API 未连接"
-                ),
-            )
+            capabilities = {
+                "connected": False, "video_edit_upload": False
+            }
+        return (
+            capabilities, _mode_description(state, capabilities),
+            _submit_button(state, capabilities),
+        )
 
-    def start_edit(source: str | None, prompt: str, existing: dict | None):
-        if existing and existing.get("status") in {"QUEUED", "GENERATING"}:
-            raise gr.Error("当前编辑任务未完成，请等待当前任务结束")
-        if not source:
-            raise gr.Error("请先上传一段 MP4 原视频")
+    def select_mode(state, capabilities, mode):
+        result = choose_mode(state, mode)
+        return (
+            result,
+            _mode_description(result, capabilities),
+            *_mode_buttons(mode),
+            _submit_button(result, capabilities),
+        )
+
+    def upload_changed(source, state, capabilities):
+        result = attach_video(state, source)
+        return (
+            result, _mode_description(result, capabilities),
+            *_mode_buttons(result["mode"]),
+            _submit_button(result, capabilities),
+        )
+
+    def apply_preset(name, state, capabilities):
+        selected = choose_edit_preset(name)
+        result = choose_mode(state, EDIT)
+        return (
+            result, selected,
+            f"✓ 已填入「{name}」，可在输入框中进一步修改。",
+            _mode_description(result, capabilities),
+            *_mode_buttons(EDIT),
+            _submit_button(result, capabilities),
+        )
+
+    def submit_workspace(state, source, prompt, style, shots, capabilities):
+        mode = state.get("mode", STORY)
         try:
-            valid_prompt = video_edit_instruction(prompt)
+            action = plan_submission(
+                mode, source, prompt, int(shots), capabilities
+            )
+            if action == EDIT:
+                instruction = video_edit_instruction(prompt)
+                path = Path(source)
+                if (
+                    not path.is_file() or path.suffix.lower() != ".mp4"
+                    or path.stat().st_size > 100 * 1024 * 1024
+                ):
+                    raise ValueError("请选择不超过 100 MiB 的有效 MP4 视频")
+                with path.open("rb") as stream:
+                    job = send(
+                        "POST", "/api/video-edits",
+                        files={"file": ("source.mp4", stream, "video/mp4")},
+                        data={"prompt": instruction},
+                    )
+                result = begin_submission(
+                    state, EDIT, job,
+                    summary="提交视频智能编辑：" + instruction[:75],
+                )
+            else:
+                created = send("POST", "/api/projects", payload={
+                    "script": prompt,
+                    "theme_style": style,
+                    "shot_count": int(shots),
+                })
+                project = send(
+                    "POST",
+                    f"/api/projects/{created['project_id']}/generate",
+                )
+                result = begin_submission(
+                    state, STORY, project,
+                    summary="创作分镜：" + prompt.strip()[:75],
+                )
         except ValueError as exc:
             raise gr.Error(str(exc)) from exc
-        path = Path(source)
-        if (
-            path.suffix.lower() != ".mp4" or not path.is_file()
-            or path.stat().st_size > 100 * 1024 * 1024
+        return (
+            result, _mode_description(result, capabilities),
+            _submit_button(result, capabilities),
+        )
+
+    def refresh_workspace(state, capabilities):
+        result = state
+        for mode, key, route in (
+            (EDIT, "edit_job", "/api/video-edits/"),
+            (STORY, "story_project", "/api/projects/"),
         ):
-            raise gr.Error("仅支持小于 100 MiB 的本地 MP4 文件")
-        with path.open("rb") as stream:
-            return send(
-                "POST", "/api/video-edits",
-                files={"file": ("source.mp4", stream, "video/mp4")},
-                data={"prompt": valid_prompt},
-            )
+            item = result.get(key) or {}
+            if item.get("status") not in {"QUEUED", "GENERATING", "STITCHING"}:
+                continue
+            identifier = item.get("job_id" if mode == EDIT else "project_id")
+            if not identifier:
+                continue
+            try:
+                with httpx.Client(timeout=8) as client:
+                    response = client.get(base + route + identifier)
+                    response.raise_for_status()
+                    updated = response.json()
+                result = update_task(result, mode, updated)
+            except (httpx.HTTPError, ValueError):
+                continue
+        if result == state:
+            return gr.skip(), gr.skip()
+        return result, _submit_button(result, capabilities)
 
-    def update_edit(job: dict | None):
-        if not job or job.get("status") not in {"QUEUED", "GENERATING"}:
-            return gr.skip()
-        try:
-            with httpx.Client(timeout=8) as client:
-                response = client.get(base + f"/api/video-edits/{job['job_id']}")
-                response.raise_for_status()
-                latest = response.json()
-            return latest if latest != job else gr.skip()
-        except (httpx.HTTPError, ValueError):
-            return gr.skip()
-
-    def create_story(script: str, style: str, count: int):
-        if not script.strip():
-            raise gr.Error("请输入剧本或口播文案")
-        return send("POST", "/api/projects", payload={
-            "script": script, "theme_style": style, "shot_count": int(count),
-        })
-
-    def start_story(project: dict | None):
+    def regenerate_shot(shot_id: int, state, prompt, duration, motion):
+        project = state.get("story_project")
         if not project:
-            raise gr.Error("请先解析分镜")
-        return send("POST", f"/api/projects/{project['project_id']}/generate")
-
-    def update_story(project: dict | None):
-        if not project or project.get("status") not in {
-            "DRAFT", "GENERATING", "STITCHING"
-        }:
-            return gr.skip()
-        try:
-            with httpx.Client(timeout=8) as client:
-                response = client.get(
-                    base + f"/api/projects/{project['project_id']}"
-                )
-                response.raise_for_status()
-                latest = response.json()
-            return latest if latest != project else gr.skip()
-        except (httpx.HTTPError, ValueError):
-            return gr.skip()
-
-    def retry_shot(shot_id: int):
-        def handler(project, prompt, duration, motion):
-            if not project:
-                raise gr.Error("请先创建分镜工程")
-            pid = project["project_id"]
-            send("PATCH", f"/api/projects/{pid}/shots/{shot_id}", payload={
-                "prompt": prompt,
-                "duration": duration,
-                "camera_motion": motion,
-            })
-            return send(
-                "POST", f"/api/projects/{pid}/shots/{shot_id}/regenerate"
-            )
-        return handler
+            raise gr.Error("没有可编辑的分镜项目")
+        pid = project["project_id"]
+        send("PATCH", f"/api/projects/{pid}/shots/{shot_id}", payload={
+            "prompt": prompt, "duration": duration, "camera_motion": motion,
+        })
+        updated = send(
+            "POST", f"/api/projects/{pid}/shots/{shot_id}/regenerate"
+        )
+        result = update_task(state, STORY, updated)
+        return append_event(result, f"已提交镜头 {shot_id:02d} 的重新生成")
 
     with gr.Blocks(
-        title="Agentic Video Studio",
+        title="Agentic Video Studio · 创作工作台",
         theme=gr.themes.Soft(primary_hue="violet", neutral_hue="slate"),
         css=STYLE_PATH.read_text(encoding="utf-8"),
         elem_id="studio-app",
     ) as demo:
+        workspace = gr.State(initial_workspace())
+        capability_state = gr.State({
+            "connected": False, "video_edit_upload": False
+        })
         gr.HTML(
-            '<header class="studio-hero">'
-            '<div class="studio-brand">'
-            '<span class="studio-brand-mark">✦</span>'
-            '<span class="studio-brand-name">AGENTIC VIDEO STUDIO</span>'
-            '<span class="studio-beta">WORKSPACE · BETA</span>'
+            '<div class="studio-app-header">'
+            '<div class="studio-app-brand">'
+            '<span class="studio-app-logo">✦</span>'
+            '<div><strong>AGENTIC VIDEO STUDIO</strong>'
+            '<small>Agent-driven creator workspace</small></div></div>'
+            '<span class="studio-app-version">MVP · LOCAL WORKSPACE</span>'
             '</div>'
-            '<h1>让每一个镜头，都恰如你所想。</h1>'
-            '<p>视频编辑和剧本成片，一站式完成。'
-            '从素材、创意描述到可预览的作品，把创作流程留在一个工作台。</p>'
-            '<div class="studio-layout-label">VIDEO EDITING  /  STORYBOARD  /  ROUGH CUT</div>'
-            '</header>'
         )
-        with gr.Tabs(elem_classes=["studio-workflow-tabs"]):
-            with gr.Tab("✦  视频智能编辑", id="edit"):
-                gr.HTML(
-                    '<div class="studio-section-head">'
-                    '<div class="studio-eyebrow">VIDEO TO VIDEO · SMART EDIT</div>'
-                    '<h2>编辑已有视频</h2>'
-                    '<p>保留原片作为输入，告诉模型希望调整的部分。'
-                    '建议使用 5～10 秒短片初次体验。</p></div>'
-                    '<div class="studio-step-track">'
-                    '<span class="step"><b>01</b>上传素材</span><span class="step-arrow">→</span>'
-                    '<span class="step"><b>02</b>输入指令</span><span class="step-arrow">→</span>'
-                    '<span class="step"><b>03</b>生成结果</span><span class="step-arrow">→</span>'
-                    '<span class="step"><b>04</b>对比导出</span></div>'
-                )
-                edit_state = gr.State({})
+        with gr.Column(elem_classes=["studio-creator-center"]):
+            gr.HTML(
+                '<div class="studio-creator-title">'
+                '<div class="studio-eyebrow">CREATE · EDIT · COMPOSE</div>'
+                '<h1>今天想创作什么？</h1>'
+                '<p>描述你的想法、上传参考视频，选择合适的创作技能。'
+                '在同一个工作台里查看结果并继续调整。</p>'
+                '</div>'
+            )
+            with gr.Group(elem_classes=["studio-composer-card"]):
                 with gr.Row(equal_height=False):
-                    with gr.Column(scale=6, min_width=390):
-                        with gr.Group(elem_classes=["studio-panel"]):
-                            gr.HTML(_panel_head(
-                                "01", "上传你的视频", "支持 MP4 · 最长 30 秒 · 不超过 100 MiB"
-                            ))
-                            original = gr.Video(
-                                label="原始素材",
-                                sources=["upload"], format="mp4",
-                                interactive=True, height=242,
-                                elem_classes=["studio-video-input"],
-                            )
-                            gr.HTML(
-                                '<p class="studio-hint">提示：尽量选择主体清晰、'
-                                '镜头运动简单的片段，便于对照编辑效果。</p>'
-                            )
-                        with gr.Group(elem_classes=["studio-panel"]):
-                            gr.HTML(_panel_head(
-                                "02", "描述你想要的修改",
-                                "点击任一灵感卡片，直接填充下方的编辑指令"
-                            ))
-                            gr.HTML('<div class="studio-card-title">✨ 试试这些编辑场景</div>')
-                            preset_buttons = []
-                            for i in range(0, len(PRESET_CARDS), 2):
-                                with gr.Row(elem_classes=["studio-preset-grid"]):
-                                    for key, heading, tagline in PRESET_CARDS[i:i+2]:
-                                        with gr.Column(min_width=150):
-                                            button = gr.Button(
-                                                f"{heading}\n{tagline}",
-                                                variant="primary" if key == PRESET_CARDS[0][0]
-                                                else "secondary",
-                                                size="md",
-                                                elem_classes=["studio-preset-card"],
-                                            )
-                                            preset_buttons.append((key, button))
-                            selected = gr.Markdown(
-                                "✓ 已选择「白天变黄昏 · 推荐首测」。下方指令可继续自由编辑。",
-                                elem_classes=["studio-hint"],
-                            )
-                            instruction = gr.Textbox(
-                                label="编辑指令 / Prompt",
-                                value=EDIT_PRESETS["白天变黄昏 · 推荐首测"],
-                                lines=5,
-                                max_lines=11,
-                                placeholder="描述要改变什么，以及必须保持不变的内容…",
-                                elem_classes=["studio-textarea"],
-                            )
-                            def select_template(name: str):
-                                prompt, caption, highlighted = selected_preset_cards(name)
-                                return (
-                                    prompt,
-                                    caption,
-                                    *[
-                                        gr.update(
-                                            variant="primary" if active else "secondary"
-                                        )
-                                        for active in highlighted
-                                    ],
-                                )
+                    with gr.Column(scale=1, min_width=165):
+                        gr.HTML(
+                            '<div class="studio-composer-label">'
+                            '＋ 添加参考素材</div>'
+                        )
+                        source = gr.File(
+                            label="上传视频 · MP4",
+                            file_types=[".mp4"], type="filepath",
+                            elem_classes=["studio-compact-upload"],
+                        )
+                        gr.HTML(
+                            '<div class="studio-composer-hint">'
+                            '仅视频编辑使用原片 · ≤30 秒 / 100 MiB</div>'
+                        )
+                    with gr.Column(scale=4, min_width=280):
+                        prompt = gr.Textbox(
+                            label="你的创作想法",
+                            lines=5, max_lines=11,
+                            placeholder=(
+                                "描述想要创作的视频，或对现有视频做哪些修改…\n"
+                                "例如：将上传视频里的白天改成黄昏，"
+                                "保持人物、动作和镜头不变。"
+                            ),
+                            elem_classes=["studio-main-prompt"],
+                        )
+                gr.HTML('<div class="studio-composer-divider"></div>')
+                with gr.Row(equal_height=True, elem_classes=["studio-skill-bar"]):
+                    edit_button = gr.Button(
+                        "✦ 视频编辑", variant="secondary",
+                        elem_classes=["studio-skill-chip"],
+                    )
+                    story_button = gr.Button(
+                        "▦ 创作分镜", variant="primary",
+                        elem_classes=["studio-skill-chip"],
+                    )
+                    submit_button = gr.Button(
+                        "正在连接 API…", variant="primary",
+                        interactive=False, elem_classes=["studio-send-button"],
+                    )
+                capability_notice = gr.Markdown(
+                    "正在检测模型服务…",
+                    elem_classes=["studio-composer-status"],
+                )
+            with gr.Accordion(
+                "创作建议与参数 · 可选",
+                open=False, elem_classes=["studio-extra-options"],
+            ):
+                gr.Markdown(
+                    "**快速技能模板** · 点击后填入编辑指令，"
+                    "不会自动提交推理任务。视频反解、精确区域编辑"
+                    "与风格模型路由尚未实现。"
+                )
+                with gr.Row(elem_classes=["studio-quick-suggestions"]):
+                    preset_buttons = []
+                    for name, label in PRESET_CARDS:
+                        button = gr.Button(
+                            label, size="sm", variant="secondary",
+                            elem_classes=["studio-suggestion-chip"],
+                        )
+                        preset_buttons.append((name, button))
+                selected_template = gr.Markdown(
+                    "还没有使用模板，可自由输入创作内容。"
+                )
+                with gr.Row():
+                    style = gr.Textbox(
+                        label="全片视觉风格（创作分镜时生效）",
+                        value="cinematic, consistent color palette",
+                        scale=3,
+                    )
+                    shot_count = gr.Slider(
+                        1, 5, step=1, value=3,
+                        label="分镜数量（创作分镜时生效）",
+                        scale=2,
+                    )
+                detect_button = gr.Button(
+                    "↻ 重新检测后端能力", size="sm",
+                    variant="secondary", elem_classes=["studio-secondary-btn"],
+                )
+            gr.HTML(
+                '<div class="studio-under-composer">'
+                '✦ 已实现：视频条件编辑（须 V2V 模型）、'
+                '剧本拆镜与粗剪 · 未实现：视频反解、区域蒙版、'
+                '跨任务自动 Agent 编排</div>'
+            )
 
-                            for key, button in preset_buttons:
-                                button.click(
-                                    fn=partial(select_template, key),
-                                    inputs=[],
-                                    outputs=[instruction, selected] + [
-                                        item_button for _, item_button in preset_buttons
-                                    ],
-                                    show_progress="hidden",
-                                )
-                            gr.HTML(
-                                '<p class="studio-hint">写清楚要改变的对象，'
-                                '并说明人物、动作、背景或时长中哪些必须保持不变。'
-                                '提示词不保证模型一定能严格遵守。</p>'
-                            )
-                            with gr.Accordion(
-                                "高级编辑 · 区域 / 时间定位（尚未支持）",
-                                open=False,
-                                elem_classes=["studio-accordion"],
-                            ):
-                                gr.Markdown(
-                                    "区域框选、Mask 与精确时间段编辑需要"
-                                    "模型和后端的专门支持。目前暂不开放无效操作。"
-                                )
-                        with gr.Group(elem_classes=["studio-panel"]):
-                            gr.HTML(_panel_head(
-                                "03", "生成编辑结果", "先确认推理服务已就绪"
-                            ))
-                            capability_notice = gr.Markdown(
-                                "正在检测后端能力…",
-                                elem_classes=["studio-status-panel"],
-                            )
-                            detect_button = gr.Button(
-                                "↻ 重新检测服务",
-                                variant="secondary",
-                                elem_classes=["studio-secondary-btn"],
-                            )
-                            submit_edit = gr.Button(
-                                "检测服务中…",
-                                variant="primary", size="lg",
-                                interactive=False,
-                                elem_classes=["studio-primary-btn"],
-                            )
-                            gr.HTML(
-                                '<p class="studio-hint">模型需支持 V2V / '
-                                'input_reference。本项目不提供积分或费用估算。</p>'
-                            )
-                    with gr.Column(scale=7, min_width=390):
-                        with gr.Group(elem_classes=["studio-panel"]):
-                            gr.HTML(_panel_head(
-                                "04", "预览与对比", "对比光照、人物、动作和时序是否符合要求"
-                            ))
-                            @gr.render(inputs=[original, edit_state])
-                            def edit_preview(source, job):
-                                if job:
-                                    gr.HTML(_job_status(job))
-                                else:
-                                    gr.HTML(
-                                        '<div class="studio-result-meta">'
-                                        '<span class="studio-status-chip">等待提交</span>'
-                                        '<small>选择原视频与编辑指令后开始</small></div>'
-                                    )
-                                with gr.Row(equal_height=True):
-                                    with gr.Column(min_width=205):
+        with gr.Column(elem_classes=["studio-workbench"]):
+            gr.HTML(
+                '<div class="studio-workbench-heading">'
+                '<div><div class="studio-eyebrow">YOUR PROJECT</div>'
+                '<h2>当前创作项目</h2>'
+                '<p>所有任务都在下方展开，无需切换页面。'
+                '创作记录仅保存在当前浏览器会话中。</p></div></div>'
+            )
+            with gr.Row(equal_height=False):
+                with gr.Column(scale=2, min_width=315):
+                    with gr.Group(elem_classes=["studio-panel"]):
+                        gr.HTML(
+                            '<div class="studio-card-title">✦ 创作动态</div>'
+                        )
+                        @gr.render(inputs=workspace)
+                        def timeline(state):
+                            gr.HTML(_timeline_html(state.get("timeline", []),
+                                                   state.get("mode", STORY)))
+                        refresh_button = gr.Button(
+                            "↻ 刷新任务状态", size="sm",
+                            elem_classes=["studio-secondary-btn"],
+                        )
+                with gr.Column(scale=5, min_width=430):
+                    with gr.Group(elem_classes=["studio-panel"]):
+                        gr.HTML(
+                            '<div class="studio-card-title">▶ 作品预览与结果</div>'
+                        )
+                        @gr.render(inputs=[workspace, source])
+                        def result_panel(state, uploaded):
+                            mode = state.get("active", STORY)
+                            if mode == EDIT:
+                                job = state.get("edit_job")
+                                gr.HTML(_status_chip(job))
+                                with gr.Row():
+                                    with gr.Column(min_width=200):
                                         gr.HTML(
-                                            '<div class="studio-card-title">'
+                                            '<div class="studio-media-label">'
                                             '原始视频 · BEFORE</div>'
                                         )
                                         if job:
                                             gr.Video(
-                                                value=base + f"/api/video-edits/"
-                                                f"{job['job_id']}/source",
-                                                label="原片", interactive=False,
-                                                height=243,
-                                                elem_classes=["studio-compare-video"],
+                                                value=base + "/api/video-edits/"
+                                                + job["job_id"] + "/source",
+                                                label="原视频", interactive=False,
+                                                height=255,
                                             )
-                                        elif source:
+                                        elif uploaded:
                                             gr.Video(
-                                                value=source, label="原片",
-                                                interactive=False, height=243,
-                                                elem_classes=["studio-compare-video"],
+                                                value=uploaded, label="原视频",
+                                                interactive=False, height=255,
                                             )
                                         else:
                                             gr.HTML(_empty_preview(
-                                                "原视频将在这里显示",
-                                                "上传 MP4 后即可开始检查素材", "▣"
+                                                "等待添加视频",
+                                                "在上方上传 MP4 原片",
                                             ))
-                                    with gr.Column(min_width=205):
+                                    with gr.Column(min_width=200):
                                         gr.HTML(
-                                            '<div class="studio-card-title">'
+                                            '<div class="studio-media-label">'
                                             '编辑结果 · AFTER</div>'
                                         )
                                         if job and job.get("status") == "READY":
                                             gr.Video(
-                                                value=base + f"/api/video-edits/"
-                                                f"{job['job_id']}/result",
-                                                label="编辑结果", interactive=False,
-                                                height=243,
-                                                elem_classes=["studio-compare-video"],
+                                                value=base + "/api/video-edits/"
+                                                + job["job_id"] + "/result",
+                                                label="修改后视频",
+                                                interactive=False, height=255,
                                             )
+                                            url = (
+                                                base + "/api/video-edits/"
+                                                + job["job_id"] + "/result?download=1"
+                                            )
+                                            gr.Markdown(f"[↓ 下载编辑结果 MP4]({url})")
                                         else:
-                                            status = (job or {}).get("status")
-                                            hint = (
-                                                "请检查下方的错误信息并重试"
-                                                if status == "FAILED"
-                                                else "生成完成后，编辑后的视频将出现在这里"
-                                            )
                                             gr.HTML(_empty_preview(
-                                                "编辑结果待生成", hint, "✦"
+                                                "等待编辑结果",
+                                                "模型执行完成后在这里对比并下载",
+                                                "✦",
                                             ))
-                                if job and job.get("status") == "READY":
+                            else:
+                                project = state.get("story_project")
+                                gr.HTML(_status_chip(project))
+                                if project and project.get("status") == "READY":
                                     url = (
-                                        f"{base}/api/video-edits/"
-                                        f"{job['job_id']}/result?download=1"
-                                    )
-                                    gr.Markdown(
-                                        f"**[↓ 下载编辑后的 MP4]({url})**",
-                                        elem_classes=["studio-download-link"],
-                                    )
-                                gr.HTML(
-                                    '<p class="studio-hint">'
-                                    '检查建议：分别观察开头、中间和结尾画面，'
-                                    '确认主体身份、位置、动作、画幅与时长。</p>'
-                                )
-
-            with gr.Tab("▦  剧本成片", id="storyboard"):
-                gr.HTML(
-                    '<div class="studio-section-head">'
-                    '<div class="studio-eyebrow">SCRIPT TO ROUGH CUT</div>'
-                    '<h2>从剧本到完整粗剪</h2>'
-                    '<p>自动拆解分镜，逐镜头生成视频；只改一处，'
-                    '只重投对应镜头。</p></div>'
-                )
-                story_state = gr.State({})
-                with gr.Row(equal_height=False):
-                    with gr.Column(scale=5, min_width=350):
-                        with gr.Group(elem_classes=["studio-panel"]):
-                            gr.HTML(_panel_head(
-                                "01", "编写剧本", "设置内容、全片风格与分镜数量"
-                            ))
-                            script = gr.Textbox(
-                                label="剧本 / 口播文案",
-                                lines=6,
-                                placeholder="例如：清晨，咖啡师打开咖啡馆。热气从杯中升起，顾客接过咖啡微笑。",
-                                elem_classes=["studio-textarea"],
-                            )
-                            style = gr.Textbox(
-                                label="统一视觉风格",
-                                value="cinematic, consistent color palette",
-                            )
-                            shot_count = gr.Slider(
-                                1, 5, value=3, step=1, label="分镜数量"
-                            )
-                            parse_button = gr.Button(
-                                "解析分镜 →", variant="primary",
-                                elem_classes=["studio-primary-btn"],
-                            )
-                            generate_button = gr.Button(
-                                "开始生成并合成",
-                                elem_classes=["studio-secondary-btn"],
-                            )
-                    with gr.Column(scale=7, min_width=360):
-                        with gr.Group(elem_classes=["studio-panel"]):
-                            gr.HTML(_panel_head(
-                                "02", "粗剪预览", "生成完成后可播放并导出 MP4"
-                            ))
-                            refresh_button = gr.Button(
-                                "↻ 刷新项目进度",
-                                size="sm",
-                                elem_classes=["studio-secondary-btn"],
-                            )
-                            @gr.render(inputs=story_state)
-                            def final_preview(project):
-                                if not project:
-                                    gr.HTML(_empty_preview(
-                                        "这里将出现你的粗剪视频",
-                                        "先输入剧本，解析分镜并开始生成", "▤"
-                                    ))
-                                    return
-                                gr.HTML(_job_status(project))
-                                if project["status"] == "READY":
-                                    url = (
-                                        f"{base}/api/projects/"
-                                        f"{project['project_id']}/video"
+                                        base + "/api/projects/"
+                                        + project["project_id"] + "/video"
                                     )
                                     gr.Video(
-                                        value=url,
-                                        label="当前粗剪", interactive=False,
-                                        elem_classes=["studio-compare-video"],
+                                        value=url, label="粗剪预览",
+                                        interactive=False, height=285,
                                     )
-                                    gr.Markdown(
-                                        f"**[↓ 下载粗剪视频]({url}?download=1)**",
-                                        elem_classes=["studio-download-link"],
-                                    )
+                                    gr.Markdown(f"[↓ 下载粗剪 MP4]({url}?download=1)")
                                 else:
                                     gr.HTML(_empty_preview(
-                                        "等待镜头合成",
-                                        "已生成的镜头会保留，修改后不展示过时的粗剪",
-                                        "✦",
+                                        "粗剪将在这里出现",
+                                        "提交剧本后自动解析分镜、生成镜头并合成",
+                                        "▦",
                                     ))
-                gr.HTML(
-                    '<div class="studio-section-head" style="margin-top:20px">'
-                    '<div class="studio-eyebrow">SHOT WORKSPACE</div>'
-                    '<h2>分镜工作台</h2>'
-                    '<p>在单张卡片中修改 Prompt、时长或运镜，'
-                    '并且只重投这一镜头。</p></div>'
-                )
-                @gr.render(inputs=story_state)
-                def shot_cards(project):
-                    if not project:
-                        gr.HTML(_empty_preview(
-                            "还没有分镜",
-                            "点击「解析分镜」后，将出现可逐个编辑的镜头卡片",
-                            "▦",
-                        ))
-                        return
-                    for shot in project["shots"]:
-                        with gr.Group(elem_classes=["studio-shot-card"]):
+                    @gr.render(inputs=workspace)
+                    def storyboard_assets(state):
+                        project = state.get("story_project")
+                        if state.get("active") != STORY or not project:
+                            return
+                        gr.HTML(
+                            '<div class="studio-assets-title">'
+                            '<h3>▦ 分镜资产</h3>'
+                            '<p>逐镜头调整并重新生成，不影响其他已就绪片段。</p>'
+                            '</div>'
+                        )
+                        for shot in project["shots"]:
                             sid = shot["id"]
-                            name, _ = STATUS_LABELS.get(
-                                shot["status"], (shot["status"], "")
-                            )
-                            gr.HTML(
-                                '<div class="studio-shot-header">'
-                                f'<span class="studio-shot-badge">SHOT {sid:02d}</span>'
-                                f'<b>{html.escape(name)}</b>'
-                                f'<span>版本 {shot["revision"]} '
-                                f'/ 已渲染 {shot["rendered_revision"]}</span></div>'
-                            )
-                            with gr.Row(equal_height=False):
-                                with gr.Column(scale=6, min_width=260):
-                                    shot_prompt = gr.Textbox(
-                                        value=shot["prompt"],
-                                        label="镜头描述",
-                                        lines=3,
-                                        key=f"shot-prompt-{sid}",
-                                        elem_classes=["studio-textarea"],
-                                    )
-                                    with gr.Row():
-                                        duration = gr.Slider(
-                                            1, 10, value=shot["duration"],
-                                            step=0.5, label="时长 · 秒",
-                                            key=f"shot-duration-{sid}",
+                            with gr.Group(elem_classes=["studio-shot-card"]):
+                                label = STATUS_LABELS.get(
+                                    shot["status"], (shot["status"], "")
+                                )[0]
+                                gr.HTML(
+                                    '<div class="studio-shot-header">'
+                                    f'<span class="studio-shot-badge">SHOT {sid:02d}</span>'
+                                    f'<b>{html.escape(label)}</b>'
+                                    f'<span>版本 {shot["revision"]} / '
+                                    f'已渲染 {shot["rendered_revision"]}</span>'
+                                    '</div>'
+                                )
+                                with gr.Row():
+                                    with gr.Column(scale=3, min_width=245):
+                                        shot_prompt = gr.Textbox(
+                                            value=shot["prompt"], label="镜头描述",
+                                            lines=3, key=f"shot-prompt-{sid}",
                                         )
-                                        motions = [
-                                            "static", "pan", "tilt", "tracking",
-                                            "dolly", "handheld",
-                                        ]
-                                        motion = gr.Dropdown(
-                                            motions,
-                                            value=shot["camera_motion"]
-                                            if shot["camera_motion"] in motions
-                                            else "static",
-                                            label="运镜", key=f"shot-motion-{sid}",
+                                        with gr.Row():
+                                            duration = gr.Slider(
+                                                1, 10, step=0.5,
+                                                value=shot["duration"],
+                                                label="目标时长 / 秒",
+                                                key=f"shot-duration-{sid}",
+                                            )
+                                            motions = [
+                                                "static", "pan", "tilt", "tracking",
+                                                "dolly", "handheld",
+                                            ]
+                                            motion = gr.Dropdown(
+                                                motions,
+                                                value=shot["camera_motion"]
+                                                if shot["camera_motion"] in motions
+                                                else "static",
+                                                label="运镜",
+                                                key=f"shot-motion-{sid}",
+                                            )
+                                        rerun = gr.Button(
+                                            "↻ 修改并重投当前镜头",
+                                            key=f"rerun-{sid}",
+                                            variant="secondary",
+                                            elem_classes=["studio-secondary-btn"],
                                         )
-                                    rerun = gr.Button(
-                                        "↻ 保存修改并重新生成此镜头",
-                                        key=f"shot-rerun-{sid}",
-                                        elem_classes=["studio-secondary-btn"],
-                                    )
-                                    rerun.click(
-                                        retry_shot(sid),
-                                        [story_state, shot_prompt, duration, motion],
-                                        story_state,
-                                    )
-                                with gr.Column(scale=5, min_width=230):
-                                    if (
-                                        shot["status"] == "READY"
-                                        and shot["rendered_revision"]
-                                        == shot["revision"]
-                                        and shot["video_path"]
-                                    ):
-                                        gr.Video(
-                                            value=base + f"/api/projects/"
-                                            f"{project['project_id']}/shots/"
-                                            f"{sid}/video",
-                                            label="镜头预览",
-                                            interactive=False, height=235,
-                                            elem_classes=["studio-compare-video"],
+                                        rerun.click(
+                                            fn=partial(regenerate_shot, sid),
+                                            inputs=[
+                                                workspace, shot_prompt,
+                                                duration, motion,
+                                            ],
+                                            outputs=workspace,
                                         )
-                                    else:
-                                        gr.HTML(_empty_preview(
-                                            "镜头待生成",
-                                            str(shot.get("error") or "点击生成后在此预览"),
-                                            "▶",
-                                        ))
-                parse_button.click(
-                    create_story, [script, style, shot_count], story_state,
-                )
-                generate_button.click(start_story, story_state, story_state)
-                refresh_button.click(update_story, story_state, story_state)
+                                    with gr.Column(scale=2, min_width=225):
+                                        if (
+                                            shot["status"] == "READY"
+                                            and shot["rendered_revision"] ==
+                                            shot["revision"] and shot["video_path"]
+                                        ):
+                                            gr.Video(
+                                                value=(
+                                                    base + "/api/projects/"
+                                                    + project["project_id"]
+                                                    + f"/shots/{sid}/video"
+                                                ),
+                                                label="镜头预览",
+                                                interactive=False, height=215,
+                                            )
+                                        else:
+                                            gr.HTML(_empty_preview(
+                                                "等待镜头生成",
+                                                str(shot.get("error")
+                                                    or "完成后可以预览此镜头"),
+                                                "▶",
+                                            ))
+
         gr.HTML(
-            '<footer class="studio-editor-footer"><p>'
-            'AGENTIC VIDEO STUDIO · 独立创作工具，非即梦 AI 官方服务。'
-            '智能视频编辑依赖 V2V 模型，区域 Mask 和精确时间段编辑尚未接入。'
-            'Mock 模式仅供分镜技术流程验证。</p></footer>'
+            '<footer class="studio-editor-footer">'
+            'AGENTIC VIDEO STUDIO · 独立创作工作台，并非即梦 AI 官方服务。'
+            '当前会话统一展示任务；后端视频编辑与分镜项目仍分别持久化。'
+            'Mock 不支持真实 AI 编辑。</footer>'
         )
-        submit_edit.click(
-            start_edit, [original, instruction, edit_state], edit_state,
+
+        edit_button.click(
+            fn=partial(select_mode, mode=EDIT),
+            inputs=[workspace, capability_state],
+            outputs=[
+                workspace, capability_notice,
+                edit_button, story_button, submit_button,
+            ],
+        )
+        story_button.click(
+            fn=partial(select_mode, mode=STORY),
+            inputs=[workspace, capability_state],
+            outputs=[
+                workspace, capability_notice,
+                edit_button, story_button, submit_button,
+            ],
+        )
+        source.change(
+            fn=upload_changed,
+            inputs=[source, workspace, capability_state],
+            outputs=[
+                workspace, capability_notice,
+                edit_button, story_button, submit_button,
+            ],
+        )
+        for name, button in preset_buttons:
+            button.click(
+                fn=partial(apply_preset, name),
+                inputs=[workspace, capability_state],
+                outputs=[
+                    workspace, prompt, selected_template, capability_notice,
+                    edit_button, story_button, submit_button,
+                ],
+            )
+        submit_button.click(
+            fn=submit_workspace,
+            inputs=[
+                workspace, source, prompt, style, shot_count, capability_state,
+            ],
+            outputs=[workspace, capability_notice, submit_button],
         )
         demo.load(
-            capabilities, outputs=[capability_notice, submit_edit],
+            fn=detect_capabilities,
+            inputs=workspace,
+            outputs=[capability_state, capability_notice, submit_button],
         )
         detect_button.click(
-            capabilities, outputs=[capability_notice, submit_edit],
+            fn=detect_capabilities,
+            inputs=workspace,
+            outputs=[capability_state, capability_notice, submit_button],
+        )
+        refresh_button.click(
+            fn=refresh_workspace,
+            inputs=[workspace, capability_state],
+            outputs=[workspace, submit_button],
         )
         timer = gr.Timer(3)
-        timer.tick(update_edit, edit_state, edit_state)
-        timer.tick(update_story, story_state, story_state)
+        timer.tick(
+            fn=refresh_workspace,
+            inputs=[workspace, capability_state],
+            outputs=[workspace, submit_button],
+        )
     return demo
 
 

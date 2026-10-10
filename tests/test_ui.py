@@ -1,89 +1,83 @@
-"""UI wiring smoke test and prompt templates."""
+"""Unified composer smoke tests and untrusted text escaping."""
 import pytest
 
 from agentic_video.ui import (
-    EDIT_PRESETS, choose_edit_preset, video_edit_instruction,
-    video_edit_availability, selected_preset_cards, PRESET_CARDS,
+    EDIT_PRESETS, PRESET_CARDS, _timeline_html, _empty_preview,
+    _status_chip, _submit_button, choose_edit_preset,
+    video_edit_availability, video_edit_instruction,
 )
+from agentic_video.workspace import EDIT, STORY, initial_workspace, choose_mode
 
 
-def test_prompt_templates_are_explicit_video_edits():
-    assert "黄昏" in choose_edit_preset("白天变黄昏 · 推荐首测")
-    assert len(EDIT_PRESETS) >= 3
+def test_prompt_templates():
+    assert len(PRESET_CARDS) == 4
+    assert "黄昏" in choose_edit_preset(PRESET_CARDS[0][0])
     assert choose_edit_preset("unknown") == ""
     assert video_edit_instruction("  编辑颜色  ") == "编辑颜色"
     with pytest.raises(ValueError):
-        video_edit_instruction("   ")
+        video_edit_instruction(" ")
     with pytest.raises(ValueError):
         video_edit_instruction("s" * 3001)
 
 
-def test_gradio_components_construct():
+def test_frontend_capabilities_fail_closed():
+    notice, enabled = video_edit_availability({"video_edit_upload": False})
+    assert not enabled and "Mock" in notice
+    note, enabled = video_edit_availability({
+        "video_edit_upload": True, "model_v2v_support_verified": False
+    })
+    assert enabled and "不代表" in note
+    pytest.importorskip("gradio")
+    disconnected = {"connected": False, "video_edit_upload": False}
+    mock = {"connected": True, "video_edit_upload": False}
+    assert _submit_button(initial_workspace(), disconnected)["interactive"] is False
+    assert _submit_button(initial_workspace(), mock)["interactive"] is True
+    editing = choose_mode(initial_workspace(), EDIT)
+    assert _submit_button(editing, mock)["interactive"] is False
+    assert _submit_button(editing, {
+        "connected": True, "video_edit_upload": True,
+    })["interactive"] is True
+
+
+def test_untrusted_timeline_and_status_escaped():
+    view = _timeline_html([
+        {"role": "user", "message": "<script>alert(1)</script>"}
+    ], STORY)
+    assert "&lt;script&gt;" in view and "<script>" not in view
+    assert "&lt;img&gt;" in _empty_preview("<img>", "preview")
+    assert "&lt;script&gt;" in _status_chip({
+        "status": "FAILED", "error": "<script>",
+    })
+
+
+def test_gradio_has_one_creator_no_business_tabs():
     pytest.importorskip("gradio")
     from agentic_video.ui import build_ui
     demo = build_ui("http://127.0.0.1:8000")
     try:
-        assert demo is not None
         components = demo.config["components"]
-        cards = [
-            component for component in components
-            if component["type"] == "button"
-            and "studio-preset-card" in component["props"].get("elem_classes", [])
-        ]
-        assert len(cards) == 4
-        labels = [c["props"].get("value", "") for c in cards]
-        assert any("光影氛围" in label for label in labels)
-        assert any("替换物体" in label for label in labels)
-        assert any("清理画面" in label for label in labels)
-        assert any("镜头运动" in label for label in labels)
-        assert not any(
-            c["type"] == "dropdown" and c["props"].get("label") == "编辑指令模板"
+        types = [c["type"] for c in components]
+        assert "tabs" not in types and "tabitem" not in types
+        assert any(
+            c["type"] == "file" and "上传视频" in c["props"].get("label", "")
             for c in components
         )
+        prompt_fields = [
+            c for c in components
+            if c["type"] == "textbox"
+            and c["props"].get("label") == "你的创作想法"
+        ]
+        assert len(prompt_fields) == 1
+        texts = [
+            c["props"].get("value", "") or ""
+            for c in components if c["type"] == "button"
+        ]
+        assert "✦ 视频编辑" in texts
+        assert "▦ 创作分镜" in texts
+        assert sum(
+            any(label in value for _, label in PRESET_CARDS)
+            for value in texts
+        ) == 4
+        assert any("生成" in value for value in texts)
     finally:
         demo.close()
-
-
-
-def test_edit_submit_disabled_in_mock_mode():
-    notice, enabled = video_edit_availability({
-        "video_edit_upload": False,
-        "video_edit_backend": "unavailable-in-mock",
-    })
-    assert enabled is False
-    assert "Mock" in notice
-    assert "剧本成片" in notice
-
-
-def test_configured_omni_is_not_misrepresented_as_verified_v2v():
-    notice, enabled = video_edit_availability({
-        "video_edit_upload": True,
-        "model_v2v_support_verified": False,
-    })
-    assert enabled is True
-    assert "不代表实际模型支持 V2V" in notice
-
-
-
-def test_ui_template_preserves_real_prompt_and_escapes_status_errors():
-    from agentic_video.ui import _job_status, _panel_head, _empty_preview
-    assert "黄昏" in choose_edit_preset("白天变黄昏 · 推荐首测")
-    assert "&lt;script&gt;" in _panel_head("01", "<script>alert(1)</script>")
-    assert "&lt;img&gt;" in _empty_preview("<img>", "preview")
-    assert "&lt;script&gt;" in _job_status({
-        "status": "FAILED", "job_id": "abc", "error": "<script>"
-    })
-
-
-def test_preset_selection_highlights_only_selected_card():
-    first = PRESET_CARDS[0][0]
-    second = PRESET_CARDS[1][0]
-    first_prompt, first_caption, first_states = selected_preset_cards(first)
-    next_prompt, next_caption, next_states = selected_preset_cards(second)
-    assert first_prompt == choose_edit_preset(first)
-    assert next_prompt == choose_edit_preset(second)
-    assert first_states == (True, False, False, False)
-    assert next_states == (False, True, False, False)
-    assert "已选择" in first_caption and "已选择" in next_caption
-    with pytest.raises(ValueError):
-        selected_preset_cards("not available")
