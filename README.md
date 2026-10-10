@@ -41,6 +41,19 @@ curl -L http://127.0.0.1:8000/api/projects/PROJECT_ID/video -o rough-cut.mp4
 
 Generation is asynchronous. Wait until project `status` is `READY` before downloading.
 
+## OpenAI-compatible multimodal video understanding
+
+You can connect a vision-capable Chat Completions model **without deploying a video-generation GPU**. The backend samples MP4 frames locally with FFmpeg, sends a small number of JPEG images to a configured API, validates the structured shot plan, and creates a DRAFT storyboard project. The UI adds a distinct **「◉ 视频理解」** skill. Review the proposed shots before clicking "确认分镜并生成粗剪"; the latter uses the existing Mock/Omni video backend.
+
+```bash
+export AVG_VISION_URL=https://api.openai.com
+export AVG_VISION_MODEL="<vision-capable-model-id>"
+read -rsp "Vision API key: " AVG_VISION_API_KEY; export AVG_VISION_API_KEY; echo
+python -m agentic_video.api
+```
+
+The compatible provider must accept `image_url` JPEG data URLs at `/v1/chat/completions` and respond with plain JSON text. `AVG_VISION_MODEL` is separate from `AVG_LLM_MODEL` (text storyboard parser) and `AVG_BACKEND` (Mock/Omni video generation). Configuring vision **does not enable V2V editing**. No audio is transmitted or understood. See [multimodal API integration guide](docs/multimodal_api.md).
+
 ## Real vLLM-Omni inference
 
 Deploy a compatible model separately (e.g. `vllm serve Wan-AI/Wan2.2-T2V-A14B-Diffusers --omni --port 8091`) and set:

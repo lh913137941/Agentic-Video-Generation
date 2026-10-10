@@ -2,7 +2,7 @@
 import pytest
 
 from agentic_video.ui import (
-    EDIT_PRESETS, PRESET_CARDS, _timeline_html, _empty_preview,
+    EDIT_PRESETS, PRESET_CARDS, _timeline_html, _analysis_html, _empty_preview,
     _status_chip, _submit_button, choose_edit_preset,
     video_edit_availability, video_edit_instruction,
 )
@@ -93,6 +93,7 @@ def test_gradio_has_one_creator_no_business_tabs():
         ]
         assert "✦ 视频编辑" in texts
         assert "▦ 创作分镜" in texts
+        assert "◉ 视频理解" in texts
         assert sum(
             any(label in value for _, label in PRESET_CARDS)
             for value in texts
@@ -122,3 +123,15 @@ def test_upload_error_displayed_outside_collapsed_trim_controls():
     assert 'gr.update(value=uploaded if valid else None)' in source
     assert 'uploaded if valid else None' in source
     assert 'Keep errors visible even while the trim panel is closed.' in source
+
+
+def test_multimodal_model_output_safely_rendered():
+    rendered = _analysis_html({
+        "summary": "<script>alert(1)</script>",
+        "observations": ["<b>bold?</b>"],
+        "sampled_seconds": [0.6, 2.2],
+    })
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;" in rendered
+    assert "&lt;b&gt;" in rendered
+    assert "0.6s" in rendered

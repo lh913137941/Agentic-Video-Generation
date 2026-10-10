@@ -11,7 +11,8 @@ from typing import Any
 
 EDIT = "video_edit"
 STORY = "storyboard"
-MODES = (EDIT, STORY)
+VISION = "video_understanding"
+MODES = (EDIT, STORY, VISION)
 ACTIVE_STATUSES = ("QUEUED", "GENERATING", "STITCHING")
 
 
@@ -21,6 +22,7 @@ def initial_workspace() -> dict[str, Any]:
         "active": STORY,
         "edit_job": None,
         "story_project": None,
+        "analysis": None,
         "source_name": None,
         "timeline": [],
     }
@@ -70,6 +72,14 @@ def plan_submission(
     """Return the existing API workflow; never silently reinterpret a file."""
     if not capabilities.get("connected"):
         raise ValueError("API 尚未连接，请先启动后端并重新检测")
+    if mode == VISION:
+        if not source:
+            raise ValueError("视频理解需要先上传 MP4")
+        if not capabilities.get("video_understanding"):
+            raise ValueError("尚未配置 OpenAI 兼容多模态视觉模型")
+        if not 1 <= int(shot_count) <= 10:
+            raise ValueError("分镜数量需要在 1～10 之间")
+        return VISION
     if not text or not text.strip():
         raise ValueError("请输入视频编辑指令或剧本内容")
     if mode == EDIT:
@@ -99,7 +109,13 @@ def begin_submission(
 ) -> dict[str, Any]:
     next_state = choose_mode(state, mode)
     next_state = append_event(next_state, summary, role="user")
-    if mode == EDIT:
+    if mode == VISION:
+        next_state["analysis"] = payload
+        next_state["story_project"] = payload["project"]
+        next_state = append_event(
+            next_state, "关键帧理解完成，已保存结构化分镜草稿；可检查后生成粗剪"
+        )
+    elif mode == EDIT:
         next_state["edit_job"] = payload
         next_state = append_event(next_state, "视频编辑任务已提交，等待推理服务处理")
     else:

@@ -221,3 +221,11 @@ body,.gradio-container {background:var(--studio-bg)!important}
   .studio-send-button {max-width:100%;min-width:160px!important}
   .studio-app-version {display:none}
 }
+
+.studio-analysis {
+  background:#f7f8ff;border:1px solid #e2e5f4;border-radius:13px;
+  padding:17px;color:#39455f;line-height:1.75;font-size:13px
+}
+.studio-analysis h3 {font-size:16px;margin:0 0 8px;color:#263150}
+.studio-analysis h4 {font-size:13px;margin:15px 0 8px}
+.studio-analysis li {margin:4px 0}

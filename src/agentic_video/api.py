@@ -1,4 +1,5 @@
 """FastAPI project lifecycle endpoints; no job broker required for this MVP."""
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,6 +17,10 @@ from .models import (
 from .parsers import OpenAIStoryboardParser, RuleStoryboardParser
 from .service import VideoService, WorkflowConflict
 from .store import FileProjectStore
+from .vision import (
+    OpenAICompatibleVisionAnalyzer, VisionConfig, VisionError,
+    VideoUnderstandingResult,
+)
 
 
 def build_service(settings: Settings | None = None) -> VideoService:
@@ -41,8 +46,23 @@ def build_service(settings: Settings | None = None) -> VideoService:
     )
 
 
-def create_app(service: VideoService | None = None) -> FastAPI:
+def create_app(
+    service: VideoService | None = None,
+    vision_analyzer: OpenAICompatibleVisionAnalyzer | None = None,
+) -> FastAPI:
     service = service or build_service()
+    # Model configuration and API credentials are server-side only.
+    cfg = Settings.from_env()
+    analyzer = vision_analyzer
+    if analyzer is None and cfg.vision_model:
+        analyzer = OpenAICompatibleVisionAnalyzer(VisionConfig(
+            base_url=cfg.vision_url,
+            model=cfg.vision_model,
+            api_key=cfg.vision_api_key,
+            max_frames=cfg.vision_frames,
+            timeout_seconds=cfg.vision_timeout_seconds,
+        ))
+    vision_limiter = asyncio.Semaphore(2)
     editor = VideoEditService(
         service.store.root / "video_edits",
         service.backend,
@@ -66,6 +86,7 @@ def create_app(service: VideoService | None = None) -> FastAPI:
     )
     app.state.video_service = service
     app.state.video_editor = editor
+    app.state.vision_analyzer = analyzer
 
     def guard(fn, *args):
         try:
@@ -94,6 +115,10 @@ def create_app(service: VideoService | None = None) -> FastAPI:
     async def capabilities():
         return {
             "storyboard_generation": True,
+            "video_understanding": analyzer is not None,
+            "vision_model": analyzer.config.model if analyzer else None,
+            "vision_model_support_verified": False,
+            "vision_frames_sent": analyzer.config.max_frames if analyzer else 0,
             "video_edit_upload": editor.enabled,
             "video_edit_backend": (
                 "vllm-omni-v2v" if editor.enabled else "unavailable-in-mock"
@@ -107,6 +132,40 @@ def create_app(service: VideoService | None = None) -> FastAPI:
                 "preservation are not guaranteed."
             ),
         }
+
+    @app.post("/api/video-understand", response_model=VideoUnderstandingResult)
+    async def understand_video(
+        file: UploadFile = File(...),
+        instruction: str = Form("描述视频中的主要场景和动作，并拆分为分镜"),
+        shot_count: int = Form(3),
+        theme_style: str = Form("cinematic, consistent color palette"),
+    ):
+        if analyzer is None:
+            raise HTTPException(
+                status_code=409,
+                detail="尚未配置视觉模型；请设置 AVG_VISION_MODEL 和服务端 API 地址",
+            )
+        if not 1 <= shot_count <= service.max_shots:
+            raise HTTPException(status_code=422, detail="分镜数量超出配置上限")
+        try:
+            async with vision_limiter:
+                plan, times = await analyzer.analyze(
+                    file, instruction, shot_count, theme_style
+                )
+            project = service.create_from_shots(
+                summary=plan.summary,
+                style=theme_style, specs=plan.shots,
+            )
+            return VideoUnderstandingResult(
+                summary=plan.summary,
+                observations=plan.observations,
+                sampled_seconds=times,
+                project=project.model_dump(mode="json"),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except VisionError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     @app.post("/api/video-edits", response_model=EditJob, status_code=202)
     async def submit_video_edit(

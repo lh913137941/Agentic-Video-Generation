@@ -14,7 +14,7 @@ import httpx
 
 from .trim import inspect_source, trim_source_video
 from .workspace import (
-    EDIT, STORY, append_event, attach_video, begin_submission, choose_mode,
+    EDIT, STORY, VISION, append_event, attach_video, begin_submission, choose_mode,
     has_active_job, initial_workspace, plan_submission, update_task,
 )
 
@@ -127,6 +127,29 @@ def _timeline_html(events: list[dict], mode: str) -> str:
     return '<div class="studio-conversation">' + "".join(parts) + '</div>'
 
 
+def _analysis_html(result: dict | None) -> str:
+    if not result:
+        return _empty_preview(
+            "等待视频理解", "上传 MP4，选择视频理解后可自动生成分镜草稿"
+        )
+    summary = html.escape(str(result.get("summary", ""))[:1500])
+    facts = "".join(
+        "<li>" + html.escape(str(item)[:500]) + "</li>"
+        for item in result.get("observations", [])[:12]
+    )
+    timestamps = ", ".join(
+        str(x) + "s" for x in result.get("sampled_seconds", [])[:8]
+    )
+    return (
+        '<div class="studio-analysis">'
+        '<h3>视觉理解摘要</h3><p>' + summary + '</p>'
+        '<h4>模型识别的可见内容</h4><ul>' + facts + '</ul>'
+        '<p class="studio-hint">抽样时间：' + html.escape(timestamps)
+        + '。只分析抽样视频帧，不解析音频。</p>'
+        '</div>'
+    )
+
+
 def _mode_description(state: dict, capabilities: dict) -> str:
     mode = state.get("mode", STORY)
     connected = capabilities.get("connected", False)
@@ -135,6 +158,14 @@ def _mode_description(state: dict, capabilities: dict) -> str:
     if mode == EDIT:
         notice, _ = video_edit_availability(capabilities)
         return notice
+    if mode == VISION:
+        if not capabilities.get("video_understanding"):
+            return "视频理解未配置。请在后端环境设置 AVG_VISION_URL、AVG_VISION_MODEL 和 AVG_VISION_API_KEY。"
+        return (
+            "视频理解已配置：" + str(capabilities.get("vision_model") or "多模态模型")
+            + "。仅发送采样图片，模型兼容性尚未实机验证；"
+            "不上传音频、不自动执行视频生成。"
+        )
     if state.get("source_name"):
         return "创作分镜当前不使用视频参考，请先移除上传的 MP4 或切换视频编辑。"
     return "剧本 → 分镜 → 镜头生成 → 粗剪合成。Mock 模式也能体验完整流程。"
@@ -146,6 +177,12 @@ def _submit_button(state: dict, capabilities: dict):
     connected = bool(capabilities.get("connected"))
     if not connected:
         return gr.update(interactive=False, value="API 未连接")
+    if mode == VISION:
+        if not capabilities.get("video_understanding"):
+            return gr.update(interactive=False, value="视频理解 API 尚未配置")
+        if not state.get("source_name"):
+            return gr.update(interactive=False, value="请先上传 MP4 进行理解")
+        return gr.update(interactive=True, value="◉ 理解视频并生成分镜草稿")
     if mode == EDIT:
         if not capabilities.get("video_edit_upload"):
             return gr.update(interactive=False, value="视频编辑需要 V2V 模型")
@@ -164,6 +201,7 @@ def _mode_buttons(mode: str):
     return (
         gr.update(variant="primary" if mode == EDIT else "secondary"),
         gr.update(variant="primary" if mode == STORY else "secondary"),
+        gr.update(variant="primary" if mode == VISION else "secondary"),
     )
 
 
@@ -200,12 +238,15 @@ def build_ui(api_url: str | None = None):
                 capabilities = {
                     "connected": True,
                     "video_edit_upload": bool(data.get("video_edit_upload")),
+                    "video_understanding": bool(data.get("video_understanding")),
+                    "vision_model": data.get("vision_model"),
                     "model_v2v_support_verified":
                         bool(data.get("model_v2v_support_verified")),
                 }
         except (httpx.HTTPError, ValueError):
             capabilities = {
-                "connected": False, "video_edit_upload": False
+                "connected": False, "video_edit_upload": False,
+                "video_understanding": False
             }
         return (
             capabilities, _mode_description(state, capabilities),
@@ -301,7 +342,26 @@ def build_ui(api_url: str | None = None):
             action = plan_submission(
                 mode, source, prompt, int(shots), capabilities
             )
-            if action == EDIT:
+            if action == VISION:
+                path = Path(source)
+                if (not path.is_file() or path.suffix.lower() != ".mp4"
+                        or path.stat().st_size > 100 * 1024 * 1024):
+                    raise ValueError("需要上传不超过 100 MiB 的 MP4")
+                with path.open("rb") as stream:
+                    plan = send(
+                        "POST", "/api/video-understand",
+                        files={"file": ("source.mp4", stream, "video/mp4")},
+                        data={
+                            "instruction": prompt.strip() or "总结视频并规划分镜",
+                            "shot_count": str(int(shots)),
+                            "theme_style": style,
+                        },
+                    )
+                result = begin_submission(
+                    state, VISION, plan,
+                    summary="分析上传视频并自动规划分镜",
+                )
+            elif action == EDIT:
                 instruction = video_edit_instruction(prompt)
                 path = Path(source)
                 if (
@@ -364,6 +424,26 @@ def build_ui(api_url: str | None = None):
             return gr.skip(), gr.skip()
         return result, _submit_button(result, capabilities)
 
+    def generate_analyzed_story(state, capabilities):
+        project = state.get("story_project")
+        if not state.get("analysis") or not project:
+            raise gr.Error("请先运行视频理解获得分镜草稿")
+        if has_active_job(state, STORY):
+            raise gr.Error("分镜任务正在生成，请等待完成")
+        result = send(
+            "POST", f"/api/projects/{project['project_id']}/generate"
+        )
+        state = choose_mode(state, STORY)
+        state = update_task(state, STORY, result)
+        state = append_event(
+            state, "已确认视觉模型生成的分镜，开始生成视频粗剪"
+        )
+        return (
+            state,
+            _mode_description(state, capabilities),
+            *_mode_buttons(STORY), _submit_button(state, capabilities),
+        )
+
     def regenerate_shot(shot_id: int, state, prompt, duration, motion):
         project = state.get("story_project")
         if not project:
@@ -393,7 +473,8 @@ def build_ui(api_url: str | None = None):
         workspace = gr.State(initial_workspace())
         selected_source = gr.State(None)
         capability_state = gr.State({
-            "connected": False, "video_edit_upload": False
+            "connected": False, "video_edit_upload": False,
+            "video_understanding": False
         })
         gr.HTML(
             '<div class="studio-app-header">'
@@ -490,6 +571,10 @@ def build_ui(api_url: str | None = None):
                         "▦ 创作分镜", variant="primary",
                         elem_classes=["studio-skill-chip"],
                     )
+                    vision_button = gr.Button(
+                        "◉ 视频理解", variant="secondary",
+                        elem_classes=["studio-skill-chip"],
+                    )
                     submit_button = gr.Button(
                         "✦ 生成作品 · 正在连接…", variant="primary",
                         interactive=False, elem_classes=["studio-send-button"],
@@ -504,7 +589,7 @@ def build_ui(api_url: str | None = None):
             ):
                 gr.Markdown(
                     "**快速技能模板** · 点击后填入编辑指令，"
-                    "不会自动提交推理任务。视频反解、精确区域编辑"
+                    "不会自动提交推理任务。音频识别、精确区域编辑"
                     "与风格模型路由尚未实现。"
                 )
                 with gr.Row(elem_classes=["studio-quick-suggestions"]):
@@ -535,7 +620,7 @@ def build_ui(api_url: str | None = None):
                 )
             gr.HTML(
                 '<div class="studio-under-composer">'
-                '✦ 已实现：视频条件编辑（须 V2V 模型）、'
+                '✦ 已实现：关键帧视频理解（须多模态 API）、视频条件编辑（须 V2V 模型）、'
                 '剧本拆镜与粗剪 · 未实现：视频反解、区域蒙版、'
                 '跨任务自动 Agent 编排</div>'
             )
@@ -570,7 +655,39 @@ def build_ui(api_url: str | None = None):
                         @gr.render(inputs=[workspace, selected_source])
                         def result_panel(state, uploaded):
                             mode = state.get("active", STORY)
-                            if mode == EDIT:
+                            if mode == VISION:
+                                analysis = state.get("analysis")
+                                gr.HTML(_analysis_html(analysis))
+                                if analysis:
+                                    project = analysis.get("project") or {}
+                                    gr.Markdown(
+                                        "**结构化分镜草稿** · "
+                                        "分镜来自视频关键帧而非音频。"
+                                        "可在下方修改镜头提示词。"
+                                    )
+                                    for shot in project.get("shots", []):
+                                        gr.Markdown(
+                                            f"**镜头 {shot['id']:02d}**："
+                                            + str(shot.get("prompt", ""))[:800]
+                                        )
+                                    if project.get("status") not in {
+                                        "GENERATING", "STITCHING", "READY"
+                                    }:
+                                        generate_plan_button = gr.Button(
+                                            "▶ 确认分镜并生成粗剪",
+                                            variant="primary",
+                                            elem_classes=["studio-send-button"],
+                                        )
+                                        generate_plan_button.click(
+                                            fn=generate_analyzed_story,
+                                            inputs=[workspace, capability_state],
+                                            outputs=[
+                                                workspace, capability_notice,
+                                                edit_button, story_button,
+                                                vision_button, submit_button,
+                                            ],
+                                        )
+                            elif mode == EDIT:
                                 job = state.get("edit_job")
                                 gr.HTML(_status_chip(job))
                                 with gr.Row():
@@ -641,7 +758,7 @@ def build_ui(api_url: str | None = None):
                     @gr.render(inputs=workspace)
                     def storyboard_assets(state):
                         project = state.get("story_project")
-                        if state.get("active") != STORY or not project:
+                        if state.get("active") not in {STORY, VISION} or not project:
                             return
                         gr.HTML(
                             '<div class="studio-assets-title">'
@@ -737,7 +854,15 @@ def build_ui(api_url: str | None = None):
             inputs=[workspace, capability_state],
             outputs=[
                 workspace, capability_notice,
-                edit_button, story_button, submit_button,
+                edit_button, story_button, vision_button, submit_button,
+            ],
+        )
+        vision_button.click(
+            fn=partial(select_mode, mode=VISION),
+            inputs=[workspace, capability_state],
+            outputs=[
+                workspace, capability_notice,
+                edit_button, story_button, vision_button, submit_button,
             ],
         )
         story_button.click(
@@ -745,7 +870,7 @@ def build_ui(api_url: str | None = None):
             inputs=[workspace, capability_state],
             outputs=[
                 workspace, capability_notice,
-                edit_button, story_button, submit_button,
+                edit_button, story_button, vision_button, submit_button,
             ],
         )
         source.change(
@@ -753,7 +878,7 @@ def build_ui(api_url: str | None = None):
             inputs=[source, workspace, capability_state],
             outputs=[
                 workspace, capability_notice,
-                edit_button, story_button, submit_button,
+                edit_button, story_button, vision_button, submit_button,
                 selected_source, preview, trim_start, trim_end, trim_status,
             ],
         )
@@ -764,7 +889,7 @@ def build_ui(api_url: str | None = None):
             ],
             outputs=[
                 selected_source, preview, workspace, capability_notice,
-                edit_button, story_button, submit_button, trim_status,
+                edit_button, story_button, vision_button, submit_button, trim_status,
             ],
         )
         restore_button.click(
@@ -772,7 +897,7 @@ def build_ui(api_url: str | None = None):
             inputs=[source, workspace, capability_state],
             outputs=[
                 selected_source, preview, workspace, capability_notice,
-                edit_button, story_button, submit_button, trim_status,
+                edit_button, story_button, vision_button, submit_button, trim_status,
             ],
         )
         for name, button in preset_buttons:
@@ -781,7 +906,7 @@ def build_ui(api_url: str | None = None):
                 inputs=[workspace, capability_state],
                 outputs=[
                     workspace, prompt, selected_template, capability_notice,
-                    edit_button, story_button, submit_button,
+                    edit_button, story_button, vision_button, submit_button,
                 ],
             )
         submit_button.click(

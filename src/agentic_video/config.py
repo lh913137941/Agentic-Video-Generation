@@ -13,6 +13,11 @@ class Settings:
     llm_url: str = "http://127.0.0.1:8001"
     llm_model: str = ""
     llm_api_key: str = ""
+    vision_url: str = "https://api.openai.com"
+    vision_model: str = ""
+    vision_api_key: str = ""
+    vision_frames: int = 4
+    vision_timeout_seconds: int = 120
     max_shots: int = 5
     generation_concurrency: int = 1
     width: int = 832
@@ -37,6 +42,10 @@ class Settings:
             self.model_fps, self.model_steps, self.output_width,
             self.output_height, self.output_fps, self.job_timeout_seconds,
         )
+        if not 1 <= self.vision_frames <= 8:
+            raise ValueError("AVG_VISION_FRAMES must be 1..8")
+        if not 10 <= self.vision_timeout_seconds <= 600:
+            raise ValueError("AVG_VISION_TIMEOUT_SECONDS must be 10..600")
         if self.model_frame_stride < 0:
             raise ValueError("model_frame_stride must be >= 0")
         if any(x < 1 for x in positive) or self.max_shots > 10:
@@ -53,6 +62,11 @@ class Settings:
             llm_url=env.get("AVG_LLM_URL", "http://127.0.0.1:8001"),
             llm_model=env.get("AVG_LLM_MODEL", ""),
             llm_api_key=env.get("AVG_LLM_API_KEY", ""),
+            vision_url=env.get("AVG_VISION_URL", "https://api.openai.com"),
+            vision_model=env.get("AVG_VISION_MODEL", ""),
+            vision_api_key=env.get("AVG_VISION_API_KEY", ""),
+            vision_frames=int(env.get("AVG_VISION_FRAMES", "4")),
+            vision_timeout_seconds=int(env.get("AVG_VISION_TIMEOUT_SECONDS", "120")),
             max_shots=int(env.get("AVG_MAX_SHOTS", "5")),
             generation_concurrency=int(env.get("AVG_GENERATION_CONCURRENCY", "1")),
             width=int(env.get("AVG_WIDTH", "832")),

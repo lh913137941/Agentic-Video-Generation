@@ -1,7 +1,7 @@
 """Creator session behavior and API routing — no GPU or web UI needed."""
 import pytest
 from agentic_video.workspace import (
-    EDIT, STORY, initial_workspace, append_event, attach_video,
+    EDIT, STORY, VISION, initial_workspace, append_event, attach_video,
     begin_submission, choose_mode, has_active_job, plan_submission, update_task,
 )
 
@@ -62,3 +62,30 @@ def test_status_updates_only_append_when_changed():
     assert len(state["timeline"]) == 30
     with pytest.raises(ValueError):
         append_event(state, "bad", role="html")
+
+
+def test_vision_mode_builds_storyboard_without_unlocking_v2v():
+    cap = {"connected": True, "video_understanding": True,
+           "video_edit_upload": False}
+    state = attach_video(initial_workspace(), "sample.mp4")
+    state = choose_mode(state, VISION)
+    assert plan_submission(VISION, "sample.mp4", "", 3, cap) == VISION
+    assert not cap["video_edit_upload"]
+    with pytest.raises(ValueError, match="上传"):
+        plan_submission(VISION, None, "analysis", 3, cap)
+    with pytest.raises(ValueError, match="多模态"):
+        plan_submission(VISION, "clip.mp4", "analysis", 3,
+                        {"connected": True, "video_understanding": False})
+    project = {"project_id": "abc", "shots": [{"id": 1}],
+               "status": "DRAFT"}
+    state = begin_submission(
+        state, VISION,
+        {"summary": "街道", "observations": ["行人"],
+         "sampled_seconds": [1.0], "project": project},
+        summary="理解视频",
+    )
+    assert state["analysis"]["summary"] == "街道"
+    assert state["story_project"]["project_id"] == "abc"
+    assert state["active"] == VISION
+    switched = choose_mode(state, STORY)
+    assert switched["analysis"] == state["analysis"]

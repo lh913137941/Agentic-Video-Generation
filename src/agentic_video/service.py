@@ -6,7 +6,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from .models import (
-    CreateProjectRequest, Project, ProjectStatus, Shot, ShotStatus, UpdateShotRequest,
+    CreateProjectRequest, Project, ProjectStatus, Shot, ShotSpec, ShotStatus, UpdateShotRequest,
 )
 from .store import FileProjectStore
 from .parsers import StoryboardParser
@@ -57,6 +57,20 @@ class VideoService:
             project_id=str(uuid4()), script=request.script,
             theme_style=request.theme_style,
             shots=[Shot(id=i, **spec.model_dump()) for i, spec in enumerate(specs, 1)]
+        )
+        self.store.save(project)
+        return project
+
+    def create_from_shots(
+        self, *, summary: str, style: str, specs: list[ShotSpec]
+    ) -> Project:
+        """Persist exact vision-planned shots, without re-parsing their text."""
+        if not specs or len(specs) > self.max_shots:
+            raise ValueError("Invalid number of vision storyboard shots")
+        project = Project(
+            project_id=str(uuid4()), script=summary,
+            theme_style=style,
+            shots=[Shot(id=i, **s.model_dump()) for i, s in enumerate(specs, 1)],
         )
         self.store.save(project)
         return project
