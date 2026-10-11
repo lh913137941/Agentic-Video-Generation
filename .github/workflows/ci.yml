@@ -1,0 +1,25 @@
+name: Python quality gate
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install project
+        run: pip install -e ".[test,ui]"
+      - name: Install FFmpeg (required for integration tests)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Verify FFmpeg and run tests
+        run: |
+          command -v ffmpeg
+          ffmpeg -version | head -n 1
+          python -m compileall -q src
+          pytest -q
