@@ -78,6 +78,12 @@ def video_edit_instruction(prompt: str) -> str:
 
 def video_edit_availability(info: dict) -> tuple[str, bool]:
     if not info.get("video_edit_upload"):
+        if info.get("video_edit_backend") == "fal-wan-edit":
+            return (
+                "fal.ai 后端已选择，但云端 SDK 未就绪。"
+                "请执行 pip install -e '.[ui,test,v2v]' 并重启 API。",
+                False,
+            )
         return (
             "当前为 Mock 模式或尚未启用 V2V 视频编辑。"
             "请展开「⚙ V2V 模型 API 配置」选择 Omni 或 fal.ai，重启 API 后生效。",
@@ -89,7 +95,7 @@ def video_edit_availability(info: dict) -> tuple[str, bool]:
             "云端编辑会产生费用，效果取决于模型。", True,
         )
     return (
-        "Omni 推理接口已配置，仍须确认实际模型支持 input_reference 视频输入。",
+        "Omni 推理接口已配置，但不代表实际模型支持 input_reference 视频输入。",
         True,
     )
 
