@@ -36,6 +36,11 @@ class FalWanEditBackend:
         self.model = model
         self.timeout_seconds = timeout_seconds
 
+    @staticmethod
+    def validate_duration(duration: float) -> None:
+        if not 2 <= duration <= 10:
+            raise ValueError("fal.ai Wan Edit Video 只接受 2～10 秒的 MP4，请先裁剪")
+
     async def generate(
         self, prompt: str, destination: Path, duration: float,
         input_reference: Path | None = None,

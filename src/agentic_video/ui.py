@@ -13,6 +13,7 @@ from pathlib import Path
 import httpx
 
 from .trim import inspect_source, trim_source_video
+from .v2v_config import FAL_EDIT_MODEL, save_local_v2v, ui_provider_status
 from .visual_editor import (
     annotation_bbox, frame_at, local_blur_region, make_filmstrip,
     store_markup, timeline_seconds,
@@ -78,13 +79,17 @@ def video_edit_instruction(prompt: str) -> str:
 def video_edit_availability(info: dict) -> tuple[str, bool]:
     if not info.get("video_edit_upload"):
         return (
-            "当前为 Mock 模式：可体验剧本分镜，但不能对上传视频做 AI 编辑。"
-            "真正视频编辑需在后端部署支持 V2V 的模型。",
+            "当前为 Mock 模式或尚未启用 V2V 视频编辑。"
+            "请展开「⚙ V2V 模型 API 配置」选择 Omni 或 fal.ai，重启 API 后生效。",
             False,
         )
+    if info.get("video_edit_backend") == "fal-wan-edit":
+        return (
+            "fal.ai Wan Edit 已启用：源 MP4 需为 2～10 秒，"
+            "云端编辑会产生费用，效果取决于模型。", True,
+        )
     return (
-        "Omni 推理接口已配置，但不代表实际模型支持 V2V 的 "
-        "input_reference；请先确认模型能力。",
+        "Omni 推理接口已配置，仍须确认实际模型支持 input_reference 视频输入。",
         True,
     )
 
@@ -247,6 +252,10 @@ def build_ui(api_url: str | None = None):
                     "vision_model": data.get("vision_model"),
                     "model_v2v_support_verified":
                         bool(data.get("model_v2v_support_verified")),
+                    "video_edit_backend": data.get("video_edit_backend"),
+                    "video_edit_model": data.get("video_edit_model"),
+                    "video_edit_min_seconds": data.get("video_edit_min_seconds"),
+                    "video_edit_max_seconds": data.get("video_edit_max_seconds"),
                 }
         except (httpx.HTTPError, ValueError):
             capabilities = {
@@ -256,6 +265,37 @@ def build_ui(api_url: str | None = None):
         return (
             capabilities, _mode_description(state, capabilities),
             _submit_button(state, capabilities),
+        )
+
+    def save_v2v_form(provider, omni_url, model, api_key):
+        try:
+            save_local_v2v(provider, omni_url, model, api_key or "")
+        except (OSError, ValueError) as exc:
+            raise gr.Error("V2V 配置保存失败：" + str(exc)) from exc
+        label = {"mock": "Mock", "omni": "本地 vLLM-Omni", "fal": "fal.ai Wan Edit"}[provider]
+        return (
+            f"✓ 已保存 **{label}** 配置。请**重启 FastAPI API 服务**，"
+            "然后点击「重新检测 API 生效状态」。保存不会发起付费生成。"
+            "如后端使用 AVG_BACKEND 环境变量启动，该变量优先于本机配置。",
+            gr.update(value=""),
+        )
+
+    def report_v2v_status():
+        try:
+            with httpx.Client(timeout=8) as client:
+                response = client.get(base + "/api/capabilities")
+                response.raise_for_status()
+                data = response.json()
+        except (httpx.HTTPError, ValueError):
+            return "⚠ API 未连接。请启动或重启 python -m agentic_video.api。"
+        status = "已启用" if data.get("video_edit_upload") else "未启用"
+        backend = str(data.get("video_edit_backend") or "unavailable")
+        model = str(data.get("video_edit_model") or "本地模型 / 未设置")
+        ready = data.get("v2v_client_installed", True)
+        return (
+            f"后端运行状态：**{status}** · 提供方：`{backend}` · 模型：`{model}`。"
+            + (" 云端 SDK 尚未安装，请安装 fal-client 后重启 API。" if not ready else "")
+            + " 选择提供方并不保证云端账号额度和真实生成效果。"
         )
 
     def select_mode(state, capabilities, mode):
@@ -543,6 +583,15 @@ def build_ui(api_url: str | None = None):
                     or path.stat().st_size > 100 * 1024 * 1024
                 ):
                     raise ValueError("请选择不超过 100 MiB 的有效 MP4 视频")
+                min_seconds = capabilities.get("video_edit_min_seconds")
+                max_seconds = capabilities.get("video_edit_max_seconds")
+                if min_seconds is not None and max_seconds is not None:
+                    duration = inspect_source(path)
+                    if not float(min_seconds) <= duration <= float(max_seconds):
+                        raise ValueError(
+                            f"当前 V2V 服务只支持 {min_seconds}～{max_seconds} 秒原片，"
+                            "请先在高级编辑里裁剪后重试"
+                        )
                 with path.open("rb") as stream:
                     job = send(
                         "POST", "/api/video-edits",
@@ -756,6 +805,46 @@ def build_ui(api_url: str | None = None):
                     elem_classes=["studio-composer-status"],
                 )
             with gr.Accordion(
+                "⚙ V2V 模型 API 配置 · Omni / fal.ai",
+                open=False, elem_classes=["studio-v2v-config"],
+            ):
+                gr.Markdown(
+                    "**V2V 视频编辑与视觉理解分开配置。**"
+                    "这里支持本地 vLLM-Omni 或 fal.ai Wan 2.7 Edit Video。"
+                    "普通 OpenAI 兼容视觉聊天 API 不会生成或编辑 MP4。"
+                )
+                current_provider, current_url, _, key_status = ui_provider_status()
+                provider_select = gr.Radio(
+                    choices=[
+                        ("Mock（不执行真实 AI 编辑）", "mock"),
+                        ("本地 vLLM-Omni", "omni"),
+                        ("fal.ai Wan 2.7 Edit（云端付费）", "fal"),
+                    ],
+                    value=current_provider, label="V2V 服务提供方",
+                )
+                with gr.Row():
+                    omni_input = gr.Textbox(
+                        label="Omni 视频 API 地址",
+                        value=current_url, scale=3,
+                        placeholder="http://127.0.0.1:8091",
+                    )
+                    fal_model = gr.Textbox(
+                        label="fal.ai 视频编辑模型（仅此模型已适配）",
+                        value=FAL_EDIT_MODEL, interactive=False, scale=3,
+                    )
+                fal_secret = gr.Textbox(
+                    label=f"fal.ai API Key（{key_status}，留空保留原密钥）",
+                    type="password", value="", placeholder="API Key 不会回显",
+                )
+                with gr.Row():
+                    save_provider = gr.Button("保存 V2V 配置", variant="primary")
+                    detect_provider = gr.Button("重新检测 API 生效状态")
+                v2v_save_status = gr.Markdown(
+                    "本机设置保存后需重启 API 服务；"
+                    "如 AVG_BACKEND 已作为环境变量设置，则以环境变量为准。"
+                )
+                v2v_api_status = gr.Markdown("尚未检查后端配置。")
+            with gr.Accordion(
                 "创作建议与参数 · 可选",
                 open=False, elem_classes=["studio-extra-options"],
             ):
@@ -817,7 +906,7 @@ def build_ui(api_url: str | None = None):
                 with gr.Column(elem_classes=["studio-edit-stage"]):
                     marker = gr.ImageEditor(
                         label="直接在画面上标记目标",
-                        height=690, type="pil",
+                        height=440, type="pil",
                         sources=[], transforms=[],
                         brush=gr.Brush(
                             colors=["#ff4d68"], default_color="#ff4d68",
@@ -830,11 +919,14 @@ def build_ui(api_url: str | None = None):
                     )
                     editor_frames = gr.Gallery(
                         label="点击缩略图切换标记画面",
-                        columns=8, rows=1, height=105,
+                        columns=8, rows=1, height=76,
                         allow_preview=False, object_fit="contain",
                         elem_classes=["studio-editor-filmstrip"],
                     )
-                    with gr.Row(elem_classes=["studio-frame-position"]):
+                    with gr.Accordion(
+                        "精确定位画面 · 可选", open=False,
+                        elem_classes=["studio-frame-position"],
+                    ):
                         mark_second = gr.Slider(
                             0, 30, step=0.1, value=0,
                             label="当前画面时间 · 秒", interactive=False,
@@ -1314,6 +1406,15 @@ def build_ui(api_url: str | None = None):
             fn=detect_capabilities,
             inputs=workspace,
             outputs=[capability_state, capability_notice, submit_button],
+        )
+        save_provider.click(
+            fn=save_v2v_form,
+            inputs=[provider_select, omni_input, fal_model, fal_secret],
+            outputs=[v2v_save_status, fal_secret],
+        )
+        detect_provider.click(
+            fn=report_v2v_status,
+            outputs=v2v_api_status,
         )
         refresh_button.click(
             fn=refresh_workspace,

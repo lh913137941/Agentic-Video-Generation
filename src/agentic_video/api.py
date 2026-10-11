@@ -12,6 +12,7 @@ from .backends import MockVideoBackend, VllmOmniVideoBackend
 from .composer import FFmpegComposer
 from .editor import EditingUnavailable, EditJob, VideoEditService
 from .config import Settings
+from .fal_video import FalWanEditBackend
 from .models import (
     CreateProjectRequest, Project, ProjectStatus, ShotStatus, UpdateShotRequest,
 )
@@ -29,14 +30,15 @@ def build_service(settings: Settings | None = None) -> VideoService:
     store = FileProjectStore(Path(cfg.data_dir))
     parser = (RuleStoryboardParser() if cfg.parser == "rule" else
               OpenAIStoryboardParser(cfg.llm_url, cfg.llm_model, cfg.llm_api_key))
+    # fal.ai edit-video needs a reference MP4, so storyboard generation
+    # remains Mock; fal editing is wired separately in create_app.
     backend = (
-        MockVideoBackend(cfg.model_fps, cfg.width, cfg.height)
-        if cfg.backend == "mock" else
         VllmOmniVideoBackend(
             cfg.omni_url, cfg.width, cfg.height,
             cfg.model_fps, cfg.model_steps, cfg.job_timeout_seconds,
-            frame_stride=cfg.model_frame_stride
-        )
+            frame_stride=cfg.model_frame_stride,
+        ) if cfg.backend == "omni" else
+        MockVideoBackend(cfg.model_fps, cfg.width, cfg.height)
     )
     composer = FFmpegComposer(
         cfg.output_width, cfg.output_height, cfg.output_fps
@@ -64,10 +66,16 @@ def create_app(
             timeout_seconds=cfg.vision_timeout_seconds,
         ))
     vision_limiter = asyncio.Semaphore(2)
+    edit_backend = (
+        FalWanEditBackend(cfg.fal_api_key, cfg.fal_model, cfg.job_timeout_seconds)
+        if cfg.backend == "fal" else service.backend
+    )
     editor = VideoEditService(
         service.store.root / "video_edits",
-        service.backend,
-        enabled=isinstance(service.backend, VllmOmniVideoBackend),
+        edit_backend,
+        enabled=(isinstance(edit_backend, VllmOmniVideoBackend) or
+                 (isinstance(edit_backend, FalWanEditBackend) and
+                  find_spec("fal_client") is not None)),
         generation_semaphore=service._semaphore,
         timeout_seconds=service.job_timeout_seconds,
     )
@@ -122,15 +130,23 @@ def create_app(
             "vision_frames_sent": analyzer.config.max_frames if analyzer else 0,
             "video_edit_upload": editor.enabled,
             "video_edit_backend": (
+                "fal-wan-edit" if cfg.backend == "fal" else
                 "vllm-omni-v2v" if editor.enabled else "unavailable-in-mock"
             ),
+            "video_edit_model": cfg.fal_model if cfg.backend == "fal" else None,
+            "video_edit_min_seconds": 2 if cfg.backend == "fal" else 0,
+            "video_edit_max_seconds": 10 if cfg.backend == "fal" else 30,
+            "v2v_client_installed": (
+                find_spec("fal_client") is not None if cfg.backend == "fal" else True
+            ),
+            "v2v_configuration_mode": "local-file-or-server-env",
             "model_v2v_support_verified": False,
             "spatial_masks": False,
             "temporal_range_control": False,
             "video_edit_note": (
-                "The selected vLLM-Omni model must support input_reference "
-                "video conditioning; model-specific support and temporal "
-                "preservation are not guaranteed."
+                "fal.ai Wan Edit: 2-10 second MP4; output depends on model"
+                if cfg.backend == "fal" else
+                "Omni requires a deployed model supporting input_reference."
             ),
         }
 

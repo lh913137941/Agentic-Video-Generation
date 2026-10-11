@@ -158,6 +158,8 @@ class VideoEditService:
             if len(first) < 12 or first[4:8] != b"ftyp":
                 raise ValueError("上传内容不是有效的 MP4 文件")
             job.duration = await asyncio.to_thread(probe_video, source)
+            if hasattr(self.backend, "validate_duration"):
+                self.backend.validate_duration(job.duration)
             self.save(job)
         except BaseException:
             shutil.rmtree(directory, ignore_errors=True)
