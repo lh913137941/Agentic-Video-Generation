@@ -84,8 +84,8 @@ def test_gradio_has_one_creator_no_business_tabs():
         assert "起点画面 · START" in labels
         assert "终点画面 · END" in labels
         assert "直接在画面上标记目标" in labels
-        assert "区域编辑说明 / Prompt" in labels
-        assert "下载已裁剪 / 已模糊的本地 MP4" in labels
+        assert "描述如何调整画面" in labels
+        assert "下载处理后的 MP4" in labels
         assert sum(c["type"] == "imageeditor" for c in components) == 1
         assert sum(c["type"] == "gallery" for c in components) >= 1
         prompt_fields = [
