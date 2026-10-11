@@ -83,7 +83,7 @@ def test_gradio_has_one_creator_no_business_tabs():
         assert "裁剪终点 · 秒" in labels
         assert "起点画面 · START" in labels
         assert "终点画面 · END" in labels
-        assert "画面标记画板 · 用画笔涂抹目标区域" in labels
+        assert "直接在画面上标记目标" in labels
         assert "区域编辑说明 / Prompt" in labels
         assert "下载已裁剪 / 已模糊的本地 MP4" in labels
         assert sum(c["type"] == "imageeditor" for c in components) == 1
