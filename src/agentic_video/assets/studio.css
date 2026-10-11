@@ -272,3 +272,300 @@ body,.gradio-container {background:var(--studio-bg)!important}
   .studio-visual-editor {padding:5px!important}
   .studio-frame-strip {overflow-x:auto!important}
 }
+
+
+/* v3 creator experience: clean dark conversational composer and immersive
+   advanced editor. Inspiration: user-supplied reference UI, not copied assets. */
+:root {
+  --studio-bg:#111214;
+  --studio-ink:#f6f6f8;
+  --studio-muted:#a0a1a8;
+  --studio-line:#343439;
+  --studio-violet:#8a7af8;
+}
+html,body,.gradio-container {
+  background:#111214!important;
+  color:#f3f3f5!important;
+}
+.gradio-container {
+  max-width:1650px!important;
+  padding:18px 28px 34px!important;
+  background:radial-gradient(ellipse at 52% 0%,#14232a 0%,#111214 47%,#101010 85%)!important;
+  min-height:100vh!important;
+}
+.studio-app-header {
+  border-bottom:1px solid #2d3036!important;
+  padding:7px 4px 17px!important;
+}
+.studio-app-brand strong {color:#fff!important;font-size:14px}
+.studio-app-brand small {color:#888f9a!important}
+.studio-app-logo {
+  border-radius:12px!important;
+  background:linear-gradient(135deg,#02c9ea,#686aff)!important;
+  box-shadow:0 3px 25px rgba(14,172,213,.12);
+}
+.studio-app-version {
+  color:#afb9c8!important;background:#1c1e23!important;
+  border-color:#34343b!important
+}
+.studio-creator-center {width:min(100%,1260px)!important;margin:35px auto 0!important}
+.studio-creator-title {text-align:center;margin:12px 0 30px!important}
+.studio-creator-title h1 {
+  color:#fff!important;font-size:clamp(32px,4vw,53px)!important;
+  font-weight:780!important;letter-spacing:-.03em!important;
+  line-height:1.3!important;
+}
+.studio-creator-title .studio-eyebrow {display:none!important}
+.studio-creator-title p {
+  color:#888f99!important;font-size:13px!important;
+  max-width:760px!important
+}
+.studio-composer-card {
+  padding:25px!important;
+  border-radius:30px!important;
+  background:linear-gradient(130deg,#1a1b1f,#202124)!important;
+  border:1px solid #303139!important;
+  box-shadow:0 20px 50px rgba(0,0,0,.22)!important;
+  overflow:visible!important;
+}
+.studio-composer-card .studio-composer-label {
+  color:#dfe2e8!important;font-size:12px!important;
+}
+.studio-composer-hint,.studio-trim-status p {color:#858b97!important;font-size:11px!important}
+.studio-composer-card .studio-file-upload {
+  min-height:52px!important;background:#27292e!important;
+  border:1px solid #3e414a!important;border-radius:12px!important;
+}
+.studio-composer-card .studio-file-upload label {color:#d4d7e3!important}
+.studio-composer-card .studio-file-upload button {
+  color:#d9d9e4!important;background:#303138!important;
+  border-color:#3c3c45!important
+}
+.studio-composer-card .studio-file-upload * {text-shadow:none!important}
+.studio-composer-card .studio-video-preview {
+  min-height:150px!important;background:#13151b!important;
+  border:1px solid #353944!important;border-radius:14px!important;
+}
+.studio-composer-card .studio-video-preview video {
+  height:150px!important;max-height:150px!important;
+  background:#11151d!important;object-fit:contain!important
+}
+.studio-composer-card .studio-main-prompt,
+.studio-composer-card .studio-main-prompt > div {
+  background:transparent!important;border-color:transparent!important;
+}
+.studio-composer-card .studio-main-prompt label {
+  color:#b5bac8!important;font-weight:600!important;font-size:12px!important
+}
+.studio-composer-card .studio-main-prompt textarea {
+  background:#232428!important;color:#f1f2f6!important;
+  border:1px solid #32343a!important;border-radius:17px!important;
+  min-height:220px!important;font-size:16px!important;
+  padding:18px!important;box-shadow:none!important;
+  line-height:1.8!important;
+}
+.studio-composer-card .studio-main-prompt textarea::placeholder {color:#81838c!important}
+.studio-composer-card .studio-main-prompt textarea:focus {
+  border-color:#6d7eae!important;outline:none!important;
+}
+.studio-composer-divider {background:#37393d!important;height:1px!important}
+.studio-composer-card .studio-skill-bar {gap:9px!important}
+.studio-composer-card .studio-skill-chip {
+  border-radius:32px!important;
+  background:#25262a!important;
+  color:#f1f2f6!important;
+  border:1px solid #393a3f!important;
+  padding:10px 15px!important;
+  font-size:13px!important;min-height:43px!important
+}
+.studio-composer-card .studio-skill-chip.primary {
+  background:#e9fbff!important;color:#15191f!important;
+  border-color:#d4fbff!important;
+}
+.studio-composer-card .studio-send-button {
+  background:linear-gradient(108deg,#eef4fe 0%,#bff6fc 64%,#ddf8ff 100%)!important;
+  color:#161a1f!important;min-height:48px!important;border-radius:28px!important;
+  border:0!important;font-weight:800!important;max-width:255px!important
+}
+.studio-composer-card .studio-send-button:disabled {
+  background:#36383d!important;color:#989ba5!important
+}
+.studio-composer-card .studio-composer-status,
+.studio-composer-card .studio-composer-status p {
+  color:#9a9da6!important;font-size:12px!important
+}
+.studio-composer-card .studio-advanced-entry {
+  background:#313237!important;color:#f5f6fb!important;
+  border:1px solid #565861!important;
+  border-radius:15px!important;
+  font-size:13px!important;font-weight:700!important;
+  min-height:40px!important;
+}
+.studio-composer-card .studio-advanced-entry:hover {
+  background:#44464d!important;border-color:#8b8eaa!important
+}
+.studio-extra-options {
+  background:#1b1c20!important;
+  border:1px solid #35363e!important;
+  border-radius:17px!important;
+  color:#dcdde3!important
+}
+.studio-extra-options * {border-color:#3b3c45}
+.studio-under-composer {color:#666c76!important;font-size:11px!important}
+.studio-workbench .studio-workbench-heading h2 {color:#f4f5fb!important}
+.studio-workbench-heading p {color:#8c909a!important}
+.studio-panel {
+  background:#1d1f23!important;
+  border:1px solid #34363c!important;
+  box-shadow:none!important;
+}
+.studio-card-title,.studio-assets-title h3,.studio-shot-header b {color:#f6f6fc!important}
+.studio-empty-conversation b {color:#cdd1df!important}
+.studio-empty-conversation p {color:#8a8e9a!important}
+.studio-chat-bubble {background:#2b2d33!important;color:#d5d8df!important}
+.studio-chat-line.user .studio-chat-bubble {background:#303247!important;color:#dedbff!important}
+.studio-shot-card {background:#232529!important;border-color:#40424a!important}
+.studio-result-shell {
+  background:#202228!important;border:1px dashed #43454d!important
+}
+.studio-result-shell strong {color:#e6e6ea!important}
+.studio-result-shell span {color:#9295a0!important}
+.studio-editor-footer {color:#717782!important;border-top-color:#303238!important}
+.studio-secondary-btn {background:#34353a!important;color:#d8dbe4!important;border-color:#474951!important}
+
+/* Large dialog. Unlike the old inline accordion, it owns the viewport and
+   never leaves Gradio's ImageEditor action bar clipped in a tiny side panel. */
+#studio-edit-overlay {
+  position:fixed!important;
+  inset:0!important;
+  z-index:9000!important;
+  background:rgba(10,10,11,.96)!important;
+  padding:16px 18px!important;
+  display:flex;
+  align-items:stretch!important;
+  justify-content:center!important;
+  overflow:auto!important;
+  isolation:isolate;
+}
+#studio-edit-overlay .studio-edit-window {
+  width:min(100%,1450px)!important;
+  max-width:1450px!important;
+  margin:0 auto!important;
+  border:0!important;
+  border-radius:20px!important;
+  background:#1b1b1d!important;
+  padding:12px 24px 25px!important;
+  min-height:calc(100dvh - 32px)!important;
+  box-shadow:0 24px 80px rgba(0,0,0,.6)!important;
+  gap:10px!important;
+}
+#studio-edit-overlay .studio-edit-head {
+  display:flex;align-items:center!important;
+  border-bottom:1px solid #343435!important;
+  padding:8px 0 14px!important;
+}
+#studio-edit-overlay .studio-edit-head strong {
+  display:block;font-size:20px!important;
+  font-weight:770;color:#fff!important;
+}
+#studio-edit-overlay .studio-edit-head small {
+  display:block;margin-top:6px!important;
+  font-size:12px;color:#979ba5!important
+}
+#studio-edit-overlay .studio-edit-close {
+  margin-left:auto!important;max-width:112px!important;
+  flex:0 0 auto!important;
+  border:1px solid #3f4145!important;background:#292a2e!important;
+  color:#f5f6fc!important;border-radius:25px!important;
+}
+#studio-edit-overlay .studio-edit-stage {
+  padding:10px 0 0!important;border:0!important;
+  background:transparent!important;
+}
+#studio-edit-overlay .studio-edit-canvas {
+  min-height:400px;
+  width:100%!important;
+  background:#101113!important;
+  border:1px solid #383838!important;
+  border-radius:18px!important;
+  overflow:visible!important;
+}
+#studio-edit-overlay .studio-edit-canvas .image-container,
+#studio-edit-overlay .studio-edit-canvas .editor {
+  background:#161618!important;
+  border-radius:13px!important;
+}
+#studio-edit-overlay .studio-edit-canvas img {
+  object-fit:contain!important
+}
+#studio-edit-overlay .studio-frame-position {
+  align-items:center!important;
+  border:1px solid #323335!important;
+  border-radius:12px!important;
+  background:#262628!important;
+  padding:7px 10px!important;
+}
+#studio-edit-overlay .studio-frame-position label,
+#studio-edit-overlay .studio-edit-command label {
+  color:#dedee5!important;
+}
+#studio-edit-overlay .studio-edit-command {
+  position:sticky;
+  bottom:0;
+  z-index:2;
+  display:flex!important;
+  align-items:end!important;
+  gap:12px!important;
+  padding:14px!important;
+  border:1px solid #39393d!important;
+  background:#2a2b2d!important;
+  border-radius:22px!important;
+}
+#studio-edit-overlay .studio-edit-command textarea {
+  background:#252628!important;
+  color:#fff!important;font-size:14px!important;
+  border:0!important;border-radius:12px!important;
+  min-height:78px!important;
+}
+#studio-edit-overlay .studio-edit-command textarea::placeholder {color:#98999f!important}
+#studio-edit-overlay .studio-edit-save {
+  min-width:140px!important;
+  flex:0 1 176px!important;
+  border:0!important;
+  border-radius:17px!important;
+  background:#f4f4f8!important;
+  color:#1d1e23!important;
+  font-weight:800!important;
+  min-height:54px!important;
+}
+#studio-edit-overlay .studio-edit-status p {
+  color:#9e9fa8!important;font-size:12px!important;
+  margin:8px 0!important
+}
+#studio-edit-overlay .studio-edit-details,
+#studio-edit-overlay .studio-edit-exports {
+  background:#262629!important;
+  border:1px solid #39393f!important;
+  border-radius:14px!important;
+}
+#studio-edit-overlay .studio-edit-details .studio-boundary-frame {
+  background:#141414!important;border-color:#4b4b52!important
+}
+#studio-edit-overlay .studio-frame-strip {
+  background:#202024!important;border-color:#3c3c43!important
+}
+#studio-edit-overlay .studio-edit-details p {
+  color:#b6b9c4!important;font-size:12px!important
+}
+@media(max-width:850px) {
+  .gradio-container {padding:10px 12px!important}
+  .studio-creator-center {margin-top:18px!important}
+  .studio-creator-title {margin-bottom:16px!important}
+  .studio-composer-card {padding:14px!important;border-radius:19px!important}
+  .studio-composer-card .studio-main-prompt textarea {min-height:155px!important}
+  #studio-edit-overlay {padding:4px!important}
+  #studio-edit-overlay .studio-edit-window {padding:10px!important;border-radius:8px!important}
+  #studio-edit-overlay .studio-edit-command {position:static;flex-wrap:wrap!important}
+  #studio-edit-overlay .studio-edit-canvas {min-height:270px}
+  #studio-edit-overlay .studio-edit-save {min-width:130px!important}
+}

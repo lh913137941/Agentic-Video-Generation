@@ -155,3 +155,29 @@ def test_timeline_markup_controls_have_real_action_events():
     assert "save_mark.click(" in source
     assert "blur_button.click(" in source
     assert "local_blur_region(" in source
+
+
+def test_jimeng_inspired_focus_mode_has_real_open_save_close_events():
+    import inspect
+    from agentic_video import ui
+    source = inspect.getsource(ui.build_ui)
+    assert 'elem_id="studio-edit-overlay"' in source
+    assert 'visible=False, elem_id="studio-edit-overlay"' in source
+    assert 'advanced_button.click(' in source
+    assert 'close_editor_button.click(' in source
+    assert 'fn=save_advanced_editor' in source
+    assert 'outputs=[\n                edit_overlay, prompt, marked_preview, manifest_file, mark_status,' in source
+    assert 'gr.ImageEditor(' in source
+    assert '精确裁剪与本地处理（可选）' in source
+    assert 'with gr.Accordion(\n                "✂ 时间轴裁剪与画面标记' not in source
+
+
+def test_immersive_editor_has_dark_style_and_not_a_fake_html_button():
+    from agentic_video.ui import STYLE_PATH
+    css = STYLE_PATH.read_text(encoding="utf-8")
+    assert "#studio-edit-overlay {" in css
+    assert "position:fixed!important" in css
+    assert ".studio-edit-command" in css
+    assert ".studio-edit-save" in css
+    assert ".studio-composer-card .studio-main-prompt textarea" in css
+    assert "background:#111214!important" in css

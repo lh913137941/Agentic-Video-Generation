@@ -361,6 +361,49 @@ def build_ui(api_url: str | None = None):
             raise gr.Error("请先上传视频")
         return preview_boundary(source, second)
 
+    def open_advanced_editor(source, second, existing_prompt):
+        if not source:
+            raise gr.Error("请先上传 MP4，再进入高级编辑")
+        try:
+            duration = inspect_source(source)
+            at = max(0, min(float(second), duration - 0.20))
+            still = frame_at(source, at)
+        except (ValueError, RuntimeError) as exc:
+            raise gr.Error(f"无法载入编辑画面：{exc}") from exc
+        return (
+            gr.update(visible=True), still,
+            existing_prompt or "",
+            gr.update(value=at, maximum=duration, interactive=True),
+            "已载入当前视频画面。用画笔直接涂抹需要编辑的物体，"
+            "填写想修改的内容，然后点击「保存并返回创作」。",
+        )
+
+    def save_advanced_editor(editor, source, second, note, first, last):
+        instruction = (note or "").strip()
+        if not source:
+            raise gr.Error("视频素材已失效，请重新上传")
+        if not instruction:
+            raise gr.Error("请填写想如何调整画面的指令")
+        if len(instruction) > 1500:
+            raise gr.Error("编辑描述不得超过 1500 字")
+        if not editor or not editor.get("layers"):
+            return (
+                gr.update(visible=False), instruction, None, None,
+                "✓ 已保存文本指令。没有绘制标记，因此未创建标注文件。",
+            )
+        try:
+            marked, metadata, bounds = store_markup(
+                editor, source, second, instruction, first, last,
+            )
+        except (ValueError, RuntimeError) as exc:
+            raise gr.Error(str(exc)) from exc
+        return (
+            gr.update(visible=False), instruction, marked, metadata,
+            "✓ 标记与编辑要求已保存，并回填到主创作框。"
+            "标记可导出用于后续支持 Mask 的模型；"
+            "当前普通 V2V 接口尚不消费此标注。",
+        )
+
     def save_frame_markup(editor, source, second, note, first, last):
         try:
             marked, metadata, bounds = store_markup(
@@ -628,6 +671,11 @@ def build_ui(api_url: str | None = None):
                             height=208,
                             elem_classes=["studio-video-preview"],
                         )
+                        advanced_button = gr.Button(
+                            "✎ 高级编辑 · 标记画面",
+                            variant="secondary",
+                            elem_classes=["studio-advanced-entry"],
+                        )
                         gr.HTML(
                             '<div class="studio-composer-hint">'
                             '上传后可预览 · 需要截取片段请展开下方裁剪工具'
@@ -672,110 +720,6 @@ def build_ui(api_url: str | None = None):
                     elem_classes=["studio-composer-status"],
                 )
             with gr.Accordion(
-                "✂ 时间轴裁剪与画面标记 · 查看起止帧 / 局部编辑",
-                open=False, elem_classes=["studio-visual-editor"],
-            ):
-                gr.Markdown(
-                    "**时间轴裁剪** · 滑动时间或点击下方关键帧，"
-                    "起点和终点的真实视频画面会同步显示。"
-                    "应用裁剪会生成新的 MP4，原视频不会被覆盖。"
-                )
-                with gr.Row(equal_height=False):
-                    with gr.Column(min_width=260):
-                        trim_start = gr.Slider(
-                            0, 30, step=0.1, value=0,
-                            label="裁剪起点 · 秒", interactive=False,
-                        )
-                        start_image = gr.Image(
-                            label="起点画面 · START", interactive=False,
-                            height=210, elem_classes=["studio-boundary-frame"],
-                        )
-                    with gr.Column(min_width=260):
-                        trim_end = gr.Slider(
-                            0, 30, step=0.1, value=10,
-                            label="裁剪终点 · 秒", interactive=False,
-                        )
-                        end_image = gr.Image(
-                            label="终点画面 · END", interactive=False,
-                            height=210, elem_classes=["studio-boundary-frame"],
-                        )
-                strip_target = gr.Radio(
-                    ["起点", "终点"], value="起点",
-                    label="点击关键帧设置", interactive=True,
-                )
-                frame_strip = gr.Gallery(
-                    label="视频关键帧 · 点击某一帧设置时间点",
-                    columns=8, rows=1, height=120,
-                    object_fit="contain", allow_preview=False,
-                    elem_classes=["studio-frame-strip"],
-                )
-                with gr.Row():
-                    trim_button = gr.Button(
-                        "✂ 应用裁剪", variant="primary",
-                        elem_classes=["studio-secondary-btn"],
-                    )
-                    restore_button = gr.Button(
-                        "↶ 恢复原视频", variant="secondary",
-                        elem_classes=["studio-secondary-btn"],
-                    )
-                gr.Markdown(
-                    "**画面标记** · 选择帧时间并载入画板，"
-                    "用画笔或橡皮标记希望处理的区域。"
-                    "标记可保存为图片/JSON；本地支持对标记区域打模糊，"
-                    "其他 AI 改衣服、换背景等仍需要具备区域编辑能力的模型。"
-                )
-                mark_second = gr.Slider(
-                    0, 30, step=0.1, value=0,
-                    label="载入标记画面的时间 · 秒", interactive=False,
-                )
-                mark_load = gr.Button(
-                    "↗ 载入该时间的画面并开始标记",
-                    elem_classes=["studio-secondary-btn"],
-                )
-                marker = gr.ImageEditor(
-                    label="画面标记画板 · 用画笔涂抹目标区域",
-                    height=430, type="pil",
-                    sources=[], transforms=[],
-                    brush=gr.Brush(
-                        colors=["#ff4057"], default_color="#ff4057",
-                        color_mode="fixed",
-                    ),
-                    elem_classes=["studio-mark-canvas"],
-                )
-                mark_instruction = gr.Textbox(
-                    label="区域编辑说明 / Prompt",
-                    placeholder="例如：标记区域是背景垃圾桶，希望移除；"
-                                "或先尝试本地局部模糊",
-                    lines=2,
-                )
-                with gr.Row():
-                    save_mark = gr.Button(
-                        "保存标注图片与说明", variant="secondary",
-                        elem_classes=["studio-secondary-btn"],
-                    )
-                    blur_button = gr.Button(
-                        "应用本地局部模糊（实际修改视频）",
-                        variant="primary",
-                        elem_classes=["studio-secondary-btn"],
-                    )
-                mark_status = gr.Markdown(
-                    "尚未载入标记画面。注意：固定区域模糊不会自动跟踪运动物体。",
-                    elem_classes=["studio-trim-status"],
-                )
-                local_export = gr.File(
-                    label="下载已裁剪 / 已模糊的本地 MP4",
-                    interactive=False,
-                )
-                with gr.Row():
-                    marked_preview = gr.Image(
-                        label="保存后的标记画面",
-                        interactive=False, height=220,
-                    )
-                    manifest_file = gr.File(
-                        label="标注信息 JSON（可下载）",
-                        interactive=False,
-                    )
-            with gr.Accordion(
                 "创作建议与参数 · 可选",
                 open=False, elem_classes=["studio-extra-options"],
             ):
@@ -816,6 +760,133 @@ def build_ui(api_url: str | None = None):
                 '剧本拆镜与粗剪 · 未实现：视频反解、区域蒙版、'
                 '跨任务自动 Agent 编排</div>'
             )
+
+        # A full-screen editing workspace, visually separate from the
+        # compact creation prompt. Gradio Group visibility handles real
+        # accessibility/interaction; no inert pseudo-modal HTML controls.
+        with gr.Group(
+            visible=False, elem_id="studio-edit-overlay",
+            elem_classes=["studio-edit-dialog"],
+        ) as edit_overlay:
+            with gr.Column(elem_classes=["studio-edit-window"]):
+                with gr.Row(elem_classes=["studio-edit-head"]):
+                    gr.HTML(
+                        '<div><strong>高级编辑</strong>'
+                        '<small>选择画面 · 直接标记 · 描述修改</small></div>'
+                    )
+                    close_editor_button = gr.Button(
+                        "✕ 关闭", variant="secondary",
+                        elem_classes=["studio-edit-close"],
+                    )
+                with gr.Column(elem_classes=["studio-edit-stage"]):
+                    marker = gr.ImageEditor(
+                        label="直接在画面上标记目标",
+                        height=510, type="pil",
+                        sources=[], transforms=[],
+                        brush=gr.Brush(
+                            colors=["#ff4d68"], default_color="#ff4d68",
+                            color_mode="fixed",
+                        ),
+                        elem_classes=["studio-edit-canvas"],
+                    )
+                    with gr.Row(elem_classes=["studio-frame-position"]):
+                        mark_second = gr.Slider(
+                            0, 30, step=0.1, value=0,
+                            label="当前标记帧 · 秒", interactive=False,
+                        )
+                        mark_load = gr.Button(
+                            "↻ 跳转到这一帧",
+                            size="sm", variant="secondary",
+                            elem_classes=["studio-secondary-btn"],
+                        )
+                with gr.Row(elem_classes=["studio-edit-command"]):
+                    mark_instruction = gr.Textbox(
+                        label="描述如何调整画面",
+                        placeholder="例如：把标记的外套改成红色，保持人物、动作和背景不变…",
+                        lines=2, max_lines=4, scale=5,
+                    )
+                    save_mark = gr.Button(
+                        "保存并返回创作", variant="primary",
+                        elem_classes=["studio-edit-save"],
+                    )
+                mark_status = gr.Markdown(
+                    "可以直接在画面上画标记并保存。"
+                    "AI 区域重绘需要支持空间掩码的模型；"
+                    "目前可保存标注并进行本地固定区域模糊。",
+                    elem_classes=["studio-edit-status"],
+                )
+                with gr.Accordion(
+                    "精确裁剪与本地处理（可选）", open=False,
+                    elem_classes=["studio-edit-details"],
+                ):
+                    gr.Markdown(
+                        "裁剪前可查看起点/终点画面；标注后还可用 FFmpeg"
+                        " 对固定范围进行局部模糊。"
+                    )
+                    with gr.Row(equal_height=False):
+                        with gr.Column(min_width=240):
+                            trim_start = gr.Slider(
+                                0, 30, step=0.1, value=0,
+                                label="裁剪起点 · 秒", interactive=False,
+                            )
+                            start_image = gr.Image(
+                                label="起点画面 · START",
+                                height=170, interactive=False,
+                                elem_classes=["studio-boundary-frame"],
+                            )
+                        with gr.Column(min_width=240):
+                            trim_end = gr.Slider(
+                                0, 30, step=0.1, value=10,
+                                label="裁剪终点 · 秒", interactive=False,
+                            )
+                            end_image = gr.Image(
+                                label="终点画面 · END",
+                                height=170, interactive=False,
+                                elem_classes=["studio-boundary-frame"],
+                            )
+                    strip_target = gr.Radio(
+                        ["起点", "终点"], value="起点",
+                        label="点击关键帧设置", interactive=True,
+                    )
+                    frame_strip = gr.Gallery(
+                        label="关键帧时间轴",
+                        columns=8, rows=1, height=115,
+                        allow_preview=False, object_fit="contain",
+                        elem_classes=["studio-frame-strip"],
+                    )
+                    with gr.Row():
+                        trim_button = gr.Button(
+                            "✂ 裁剪当前片段", variant="secondary",
+                            elem_classes=["studio-secondary-btn"],
+                        )
+                        restore_button = gr.Button(
+                            "↶ 恢复原片", variant="secondary",
+                            elem_classes=["studio-secondary-btn"],
+                        )
+                        blur_button = gr.Button(
+                            "对标记区域应用本地模糊",
+                            variant="secondary",
+                            elem_classes=["studio-secondary-btn"],
+                        )
+                    gr.Markdown(
+                        "局部模糊是真实的视频修改，但标记区域为固定矩形，"
+                        "不自动跟踪移动人物。"
+                    )
+                with gr.Accordion(
+                    "已保存的标注与本地视频", open=False,
+                    elem_classes=["studio-edit-exports"],
+                ):
+                    local_export = gr.File(
+                        label="下载处理后的 MP4", interactive=False,
+                    )
+                    with gr.Row():
+                        marked_preview = gr.Image(
+                            label="标记截图", interactive=False,
+                            height=200,
+                        )
+                        manifest_file = gr.File(
+                            label="标注数据 JSON", interactive=False,
+                        )
 
         with gr.Column(elem_classes=["studio-workbench"]):
             gr.HTML(
@@ -1075,6 +1146,18 @@ def build_ui(api_url: str | None = None):
                 local_export,
             ],
         )
+        advanced_button.click(
+            fn=open_advanced_editor,
+            inputs=[selected_source, mark_second, prompt],
+            outputs=[
+                edit_overlay, marker, mark_instruction,
+                mark_second, mark_status,
+            ],
+        )
+        close_editor_button.click(
+            fn=lambda: gr.update(visible=False),
+            outputs=edit_overlay,
+        )
         # A gallery frame explicitly sets one of the two time boundaries.
         frame_strip.select(
             fn=choose_strip_frame,
@@ -1105,10 +1188,14 @@ def build_ui(api_url: str | None = None):
             outputs=marker,
         )
         save_mark.click(
-            fn=save_frame_markup,
-            inputs=[marker, selected_source, mark_second, mark_instruction,
-                    trim_start, trim_end],
-            outputs=[marked_preview, manifest_file, mark_status],
+            fn=save_advanced_editor,
+            inputs=[
+                marker, selected_source, mark_second, mark_instruction,
+                trim_start, trim_end,
+            ],
+            outputs=[
+                edit_overlay, prompt, marked_preview, manifest_file, mark_status,
+            ],
         )
         blur_button.click(
             fn=blur_marked_area,
