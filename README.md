@@ -41,6 +41,32 @@ curl -L http://127.0.0.1:8000/api/projects/PROJECT_ID/video -o rough-cut.mp4
 
 Generation is asynchronous. Wait until project `status` is `READY` before downloading.
 
+
+## V2V video editing API configuration
+
+Open **⚙ V2V 模型 API 配置** under the main creator composer.
+
+Choose Mock (no AI editing), vLLM-Omni (local video editing endpoint), or **fal.ai Wan 2.7 Edit Video** (cloud video editing using MP4 + prompt). The cloud option requires a provider API key and a 2–10 second MP4 and may incur inference charges. This is separate from AVG_VISION_* (OpenAI-compatible vision understanding).
+
+Install the cloud adapter dependency:
+
+```bash
+python -m pip install -e ".[ui,test,v2v]"
+```
+
+Set provider and API key in the UI password field, choose **保存 V2V 配置**, then **restart the FastAPI backend** and press **重新检测 API 生效状态**. This is local single-user development. Secrets are stored in ~/.agentic_video/v2v.json under the OS account, not committed to Git or served by the public capabilities endpoint. On Windows protect your user profile from other users. Never publish the UI/API ports to the Internet without authentication.
+
+Environment variables take priority if explicitly set when starting the API:
+
+```bash
+export AVG_BACKEND=fal
+export AVG_FAL_MODEL=fal-ai/wan/v2.7/edit-video
+read -rsp "fal.ai Key: " FAL_KEY; export FAL_KEY; echo
+python -m agentic_video.api
+```
+
+Local Omni instead uses AVG_BACKEND=omni and AVG_OMNI_URL=http://127.0.0.1:8091. Check /api/capabilities for video_edit_backend, v2v_client_installed and max allowed video duration. Saved settings only apply after API restart; API Key never appears in capabilities. With fal.ai the original MP4 is uploaded to its provider storage, so review provider privacy and billing terms before running it. Saved frame drawings/JSON are not passed as masks to this cloud adapter. It only supplies the video and text instruction.
+
 ## OpenAI-compatible multimodal video understanding
 
 You can connect a vision-capable Chat Completions model **without deploying a video-generation GPU**. The backend samples MP4 frames locally with FFmpeg, sends a small number of JPEG images to a configured API, validates the structured shot plan, and creates a DRAFT storyboard project. The UI adds a distinct **「◉ 视频理解」** skill. Review the proposed shots before clicking "确认分镜并生成粗剪"; the latter uses the existing Mock/Omni video backend.

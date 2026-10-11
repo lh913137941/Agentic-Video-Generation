@@ -2,11 +2,14 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from .v2v_config import FAL_EDIT_MODEL, load_local_v2v
 
 
 @dataclass(frozen=True)
 class Settings:
     backend: str = "mock"
+    fal_model: str = FAL_EDIT_MODEL
+    fal_api_key: str = ""
     parser: str = "rule"
     data_dir: Path = Path("./data")
     omni_url: str = "http://127.0.0.1:8091"
@@ -31,8 +34,10 @@ class Settings:
     job_timeout_seconds: int = 1800
 
     def __post_init__(self) -> None:
-        if self.backend not in {"mock", "omni"}:
-            raise ValueError("AVG_BACKEND must be mock or omni")
+        if self.backend not in {"mock", "omni", "fal"}:
+            raise ValueError("AVG_BACKEND must be mock, omni or fal")
+        if self.backend == "fal" and (self.fal_model != FAL_EDIT_MODEL or not self.fal_api_key):
+            raise ValueError("fal backend requires the supported Wan Edit model and FAL_KEY")
         if self.parser not in {"rule", "llm"}:
             raise ValueError("AVG_PARSER must be rule or llm")
         if self.parser == "llm" and not self.llm_model:
@@ -54,11 +59,14 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         env = os.environ
+        local = load_local_v2v()
         return cls(
-            backend=env.get("AVG_BACKEND", "mock").lower(),
+            backend=env.get("AVG_BACKEND", local["provider"]).lower(),
+            fal_model=env.get("AVG_FAL_MODEL", local["model"] or FAL_EDIT_MODEL),
+            fal_api_key=env.get("FAL_KEY", local["api_key"]),
             parser=env.get("AVG_PARSER", "rule").lower(),
             data_dir=Path(env.get("AVG_DATA_DIR", "./data")),
-            omni_url=env.get("AVG_OMNI_URL", "http://127.0.0.1:8091"),
+            omni_url=env.get("AVG_OMNI_URL", local["omni_url"]),
             llm_url=env.get("AVG_LLM_URL", "http://127.0.0.1:8001"),
             llm_model=env.get("AVG_LLM_MODEL", ""),
             llm_api_key=env.get("AVG_LLM_API_KEY", ""),

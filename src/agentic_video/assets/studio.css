@@ -649,3 +649,103 @@ html,body,.gradio-container {
     max-width:100%!important;
   }
 }
+
+
+/* Responsive editing workspace: fit at ordinary 100% browser zoom.
+   Retire the earlier hard-coded 690px canvas, min-height and sticky footer.
+   On short screens allow natural scrolling, never hide tools behind the prompt. */
+#studio-edit-overlay {
+  box-sizing:border-box!important;
+  height:100dvh!important;
+  max-height:100dvh!important;
+  padding:8px 12px!important;
+  overflow-y:auto!important;
+  overscroll-behavior:contain;
+}
+#studio-edit-overlay .studio-edit-window {
+  width:min(100%,1100px)!important;
+  max-width:1100px!important;
+  min-height:0!important;
+  height:auto!important;
+  padding:9px 16px 14px!important;
+  gap:5px!important;
+  box-sizing:border-box!important;
+}
+#studio-edit-overlay .studio-edit-head {
+  padding:3px 0 7px!important;
+  min-height:38px!important;
+}
+#studio-edit-overlay .studio-edit-head strong {font-size:18px!important}
+#studio-edit-overlay .studio-edit-head small {font-size:11px!important}
+#studio-edit-overlay .studio-edit-stage {
+  gap:4px!important;padding:3px 0!important;
+}
+#studio-edit-overlay .studio-edit-canvas {
+  box-sizing:border-box!important;
+  height:min(440px, 47dvh)!important;
+  min-height:0!important;
+  max-height:47dvh!important;
+  width:min(100%,1000px)!important;
+  max-width:1000px!important;
+  margin:auto!important;
+  overflow:hidden!important;
+}
+#studio-edit-overlay .studio-edit-canvas .image-container,
+#studio-edit-overlay .studio-edit-canvas .editor {
+  height:100%!important;
+  min-height:0!important;
+  max-height:100%!important;
+}
+#studio-edit-overlay .studio-edit-canvas img {
+  object-fit:contain!important;
+  max-width:100%!important;
+  max-height:100%!important;
+}
+#studio-edit-overlay .studio-frame-caption {margin:1px 0!important}
+#studio-edit-overlay .studio-editor-filmstrip {
+  max-height:90px!important;
+  min-height:0!important;
+  overflow-y:hidden!important;
+  overflow-x:auto!important;
+}
+#studio-edit-overlay .studio-edit-command {
+  position:static!important;
+  bottom:auto!important;
+  min-height:0!important;
+  margin-top:4px!important;
+  padding:8px!important;
+  gap:8px!important;
+}
+#studio-edit-overlay .studio-edit-command textarea {
+  min-height:50px!important;
+  max-height:100px!important;
+}
+#studio-edit-overlay .studio-edit-save {min-height:44px!important}
+#studio-edit-overlay .studio-edit-status p {
+  margin:3px 0!important;font-size:11px!important;
+}
+.studio-v2v-config {
+  border:1px solid #4c465f!important;
+  border-radius:13px!important;
+  background:#25252b!important;
+}
+.studio-v2v-config p,.studio-v2v-config label {
+  color:#dedbea!important;
+}
+.studio-v2v-config button {border-radius:10px!important}
+@media(max-height:700px) {
+ #studio-edit-overlay .studio-edit-canvas {
+   height:42dvh!important;max-height:42dvh!important;
+ }
+}
+@media(max-width:850px) {
+ #studio-edit-overlay {padding:4px!important}
+ #studio-edit-overlay .studio-edit-window {padding:7px!important}
+ #studio-edit-overlay .studio-edit-canvas {
+   width:100%!important;
+   height:min(390px, 43dvh)!important;
+   max-height:43dvh!important;
+   min-height:0!important;
+ }
+ #studio-edit-overlay .studio-edit-command {flex-wrap:wrap!important}
+}

@@ -209,3 +209,20 @@ def test_marked_frame_visible_in_composer_after_save():
     assert '#studio-edit-overlay .studio-edit-command {' in css
     assert 'position:static!important;' in css
     assert '.studio-annotation-card {' in css
+
+
+def test_viewport_adaptive_editor_and_explicit_v2v_configuration():
+    import inspect
+    from agentic_video import ui
+    css = ui.STYLE_PATH.read_text(encoding="utf-8")
+    assert 'height:min(440px, 47dvh)!important' in css
+    assert 'min-height:0!important' in css
+    assert 'max-height:47dvh!important' in css
+    assert 'height=440, type="pil"' in inspect.getsource(ui.build_ui)
+    assert "精确定位画面 · 可选" in inspect.getsource(ui.build_ui)
+    src = inspect.getsource(ui.build_ui)
+    assert "⚙ V2V 模型 API 配置" in src
+    assert 'type="password"' in src
+    assert "save_local_v2v(" in src
+    assert "save_provider.click(" in src
+    assert "detect_provider.click(" in src

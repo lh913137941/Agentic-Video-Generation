@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ui = ["gradio>=5,<7"]
+v2v = ["fal-client>=0.7"]
 test = ["pytest>=8,<10"]
 
 [project.scripts]

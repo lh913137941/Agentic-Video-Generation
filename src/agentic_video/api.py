@@ -1,5 +1,6 @@
 """FastAPI project lifecycle endpoints; no job broker required for this MVP."""
 import asyncio
+from importlib.util import find_spec
 from contextlib import asynccontextmanager
 from pathlib import Path
 
