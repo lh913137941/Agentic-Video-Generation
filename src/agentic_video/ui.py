@@ -356,6 +356,21 @@ def build_ui(api_url: str | None = None):
     # actual event class for correct Gallery.select event injection.
     choose_strip_frame.__annotations__["evt"] = gr.SelectData
 
+    def choose_editor_frame(source, evt: gr.SelectData):
+        if not source:
+            raise gr.Error("请先添加视频素材")
+        try:
+            duration = inspect_source(source)
+            moment = timeline_seconds(duration)[int(evt.index)]
+            still = frame_at(source, min(moment, max(0.0, duration - 0.20)))
+        except (IndexError, ValueError, TypeError, RuntimeError) as exc:
+            raise gr.Error("无法切换该画面，请重试") from exc
+        return still, gr.update(value=moment), (
+            f"已切换到 {moment:.2f}s。请在当前画面上重新标记目标区域。"
+        )
+
+    choose_editor_frame.__annotations__["evt"] = gr.SelectData
+
     def mark_this_frame(source, second):
         if not source:
             raise gr.Error("请先上传视频")
@@ -644,10 +659,9 @@ def build_ui(api_url: str | None = None):
         with gr.Column(elem_classes=["studio-creator-center"]):
             gr.HTML(
                 '<div class="studio-creator-title">'
-                '<div class="studio-eyebrow">CREATE · EDIT · COMPOSE</div>'
-                '<h1>今天想创作什么？</h1>'
-                '<p>描述你的想法、上传参考视频，选择合适的创作技能。'
-                '在同一个工作台里查看结果并继续调整。</p>'
+                '<div class="studio-eyebrow">AGENTIC VIDEO</div>'
+                '<h1>你好，今天想创作什么？</h1>'
+                '<p>上传视频，描述你想改变的画面；需要精确标记时，点击高级编辑。</p>'
                 '</div>'
             )
             with gr.Group(elem_classes=["studio-composer-card"]):
@@ -672,13 +686,13 @@ def build_ui(api_url: str | None = None):
                             elem_classes=["studio-video-preview"],
                         )
                         advanced_button = gr.Button(
-                            "✎ 高级编辑 · 标记画面",
+                            "✎ 高级编辑",
                             variant="secondary",
                             elem_classes=["studio-advanced-entry"],
                         )
                         gr.HTML(
                             '<div class="studio-composer-hint">'
-                            '上传后可预览 · 需要截取片段请展开下方裁剪工具'
+                            '上传后点「高级编辑」，可直接在画面上标记并填写修改要求'
                             '</div>'
                         )
                         # Keep errors visible even while the trim panel is closed.
@@ -772,10 +786,10 @@ def build_ui(api_url: str | None = None):
                 with gr.Row(elem_classes=["studio-edit-head"]):
                     gr.HTML(
                         '<div><strong>高级编辑</strong>'
-                        '<small>选择画面 · 直接标记 · 描述修改</small></div>'
+                        '<small>在画面上直接涂抹需要修改的部分，填写要求后保存</small></div>'
                     )
                     close_editor_button = gr.Button(
-                        "✕ 关闭", variant="secondary",
+                        "✕", variant="secondary",
                         elem_classes=["studio-edit-close"],
                     )
                 with gr.Column(elem_classes=["studio-edit-stage"]):
@@ -789,13 +803,22 @@ def build_ui(api_url: str | None = None):
                         ),
                         elem_classes=["studio-edit-canvas"],
                     )
+                    gr.HTML(
+                        '<div class="studio-frame-caption">选择视频中的某个画面进行标记</div>'
+                    )
+                    editor_frames = gr.Gallery(
+                        label="点击缩略图切换标记画面",
+                        columns=8, rows=1, height=105,
+                        allow_preview=False, object_fit="contain",
+                        elem_classes=["studio-editor-filmstrip"],
+                    )
                     with gr.Row(elem_classes=["studio-frame-position"]):
                         mark_second = gr.Slider(
                             0, 30, step=0.1, value=0,
-                            label="当前标记帧 · 秒", interactive=False,
+                            label="当前画面时间 · 秒", interactive=False,
                         )
                         mark_load = gr.Button(
-                            "↻ 跳转到这一帧",
+                            "跳到精确时间",
                             size="sm", variant="secondary",
                             elem_classes=["studio-secondary-btn"],
                         )
@@ -1181,6 +1204,15 @@ def build_ui(api_url: str | None = None):
                 frame_strip, start_image, end_image,
                 mark_second, marker, mark_status,
             ],
+        ).then(
+            fn=lambda strip: strip,
+            inputs=[frame_strip],
+            outputs=[editor_frames],
+        )
+        editor_frames.select(
+            fn=choose_editor_frame,
+            inputs=[selected_source],
+            outputs=[marker, mark_second, mark_status],
         )
         mark_load.click(
             fn=mark_this_frame,

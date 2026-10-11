@@ -569,3 +569,24 @@ html,body,.gradio-container {
   #studio-edit-overlay .studio-edit-canvas {min-height:270px}
   #studio-edit-overlay .studio-edit-save {min-width:130px!important}
 }
+
+/* Jimeng-style focus: large canvas, direct filmstrip seeking, one primary action. */
+#studio-edit-overlay .studio-edit-window {max-width:1540px!important;padding:10px 20px 20px!important}
+#studio-edit-overlay .studio-edit-stage {gap:8px!important}
+#studio-edit-overlay .studio-edit-canvas {min-height:500px!important}
+#studio-edit-overlay .studio-edit-canvas img {max-height:60vh!important;object-fit:contain!important}
+#studio-edit-overlay .studio-frame-caption {color:#babdc8;font-size:12px;margin:5px 0 0}
+#studio-edit-overlay .studio-editor-filmstrip {
+  background:#222326!important;border:1px solid #383a40!important;
+  padding:5px!important;border-radius:13px!important;max-height:125px!important;
+}
+#studio-edit-overlay .studio-editor-filmstrip img {object-fit:cover!important}
+#studio-edit-overlay .studio-frame-position {border:0!important;background:transparent!important;padding:0!important}
+#studio-edit-overlay .studio-frame-position label {font-size:11px!important;color:#969aa5!important}
+#studio-edit-overlay .studio-edit-status p {font-size:11px!important;opacity:.85}
+#studio-edit-overlay .studio-edit-command {position:sticky!important;bottom:0!important;z-index:4!important}
+@media(max-width:850px){
+ #studio-edit-overlay .studio-edit-canvas {min-height:300px!important}
+ #studio-edit-overlay .studio-edit-window {padding:8px!important}
+ #studio-edit-overlay .studio-editor-filmstrip {overflow-x:auto!important}
+}

@@ -181,3 +181,15 @@ def test_immersive_editor_has_dark_style_and_not_a_fake_html_button():
     assert ".studio-edit-save" in css
     assert ".studio-composer-card .studio-main-prompt textarea" in css
     assert "background:#111214!important" in css
+
+
+def test_jimeng_style_direct_frame_navigation():
+    import inspect
+    from agentic_video import ui
+    source = inspect.getsource(ui.build_ui)
+    assert "editor_frames = gr.Gallery(" in source
+    assert "editor_frames.select(" in source
+    assert "fn=choose_editor_frame" in source
+    assert "outputs=[marker, mark_second, mark_status]" in source
+    assert "studio-edit-command" in source
+    assert "精确裁剪与本地处理（可选）" in source
