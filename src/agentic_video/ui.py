@@ -13,6 +13,10 @@ from pathlib import Path
 import httpx
 
 from .trim import inspect_source, trim_source_video
+from .visual_editor import (
+    annotation_bbox, frame_at, local_blur_region, make_filmstrip,
+    store_markup, timeline_seconds,
+)
 from .workspace import (
     EDIT, STORY, VISION, append_event, attach_video, begin_submission, choose_mode,
     has_active_job, initial_workspace, plan_submission, update_task,
@@ -293,7 +297,98 @@ def build_ui(api_url: str | None = None):
                 value=round(duration, 2) if valid else 10,
                 maximum=ceiling, interactive=valid,
             ),
-            status,
+            status, None,
+        )
+
+    def setup_visual_timeline(source, first, last):
+        if not source:
+            return [], None, None, gr.update(
+                value=0, maximum=30, interactive=False
+            ), None, "请先上传有效的 MP4 素材"
+        try:
+            duration = inspect_source(source)
+            first = min(max(float(first), 0), duration)
+            last = min(max(float(last), 0), duration)
+            return (
+                make_filmstrip(source),
+                frame_at(source, first),
+                frame_at(source, max(0, last - 0.05)),
+                gr.update(value=first, maximum=duration, interactive=True),
+                frame_at(source, first),
+                "时间轴已加载。可选择关键帧设置起止位置，"
+                "也可以直接在已载入的帧上进行标记。",
+            )
+        except (ValueError, RuntimeError) as exc:
+            return [], None, None, gr.update(
+                value=0, interactive=False
+            ), None, f"⚠️ 时间轴初始化失败：{exc}"
+
+    def preview_boundary(source, sec):
+        if not source:
+            return None
+        try:
+            duration = inspect_source(source)
+            return frame_at(source, min(max(float(sec), 0),
+                                        max(0, duration - 0.05)))
+        except (ValueError, RuntimeError) as exc:
+            raise gr.Error(f"无法显示指定时间的画面：{exc}") from exc
+
+    def choose_strip_frame(source, side, evt: gr.SelectData):
+        if not source:
+            raise gr.Error("请先上传 MP4 视频")
+        try:
+            duration = inspect_source(source)
+            index = int(evt.index)
+            moment = timeline_seconds(duration)[index]
+        except (ValueError, TypeError, IndexError) as exc:
+            raise gr.Error("无法选择关键帧") from exc
+        if side == "起点":
+            return gr.update(value=moment), gr.skip()
+        return gr.skip(), gr.update(value=moment)
+
+    def mark_this_frame(source, second):
+        if not source:
+            raise gr.Error("请先上传视频")
+        return preview_boundary(source, second)
+
+    def save_frame_markup(editor, source, second, note):
+        try:
+            marked, metadata, bounds = store_markup(
+                editor, source, second, note
+            )
+        except (ValueError, RuntimeError) as exc:
+            raise gr.Error(str(exc)) from exc
+        return (
+            marked, metadata,
+            "✓ 已保存标记帧和 JSON 区域信息。"
+            "区域范围：" + ", ".join(f"{n:.2f}" for n in bounds)
+            + "。注意：这不是模型自动抠图或真实的 AI 局部重绘。",
+        )
+
+    def blur_marked_area(source, editor, first, last, state, capabilities):
+        if not source:
+            raise gr.Error("请先上传 MP4")
+        try:
+            rendered, box = local_blur_region(
+                source, editor, float(first), float(last)
+            )
+        except (ValueError, RuntimeError) as exc:
+            raise gr.Error(str(exc)) from exc
+        result = attach_video(state, rendered)
+        result = append_event(
+            result, f"已对固定标记区域执行局部模糊 "
+                    f"({float(first):.1f}～{float(last):.1f} 秒)"
+        )
+        result = choose_mode(result, EDIT)
+        status = (
+            "✓ 已对视频输出实际模糊效果。"
+            "这是固定画面区域，不会追踪移动对象；"
+            "已更新预览和当前视频素材。"
+        )
+        return (
+            rendered, rendered, result, _mode_description(result, capabilities),
+            *_mode_buttons(EDIT), _submit_button(result, capabilities),
+            status, rendered,
         )
 
     def apply_trim(uploaded, first, last, state, capabilities):
@@ -307,11 +402,15 @@ def build_ui(api_url: str | None = None):
         result = append_event(
             result, f"已将原片裁剪为 {first:.2f}～{last:.2f} 秒片段"
         )
+        duration = inspect_source(cropped)
         return (
             cropped, cropped, result,
             _mode_description(result, capabilities),
             *_mode_buttons(EDIT), _submit_button(result, capabilities),
-            f"✓ 已裁剪为 {last - first:.2f} 秒，右侧预览及后续提交均使用裁剪片段。",
+            gr.update(value=0, maximum=duration, interactive=True),
+            gr.update(value=duration, maximum=duration, interactive=True),
+            f"✓ 已裁剪为 {duration:.2f} 秒，预览及后续生成使用裁剪片段。",
+            cropped,
         )
 
     def restore_source(uploaded, state, capabilities):
@@ -319,10 +418,14 @@ def build_ui(api_url: str | None = None):
             raise gr.Error("请先上传原视频")
         result = attach_video(state, uploaded)
         result = append_event(result, "已恢复使用原始视频")
+        duration = inspect_source(uploaded)
         return (
             uploaded, uploaded, result, _mode_description(result, capabilities),
             *_mode_buttons(EDIT), _submit_button(result, capabilities),
+            gr.update(value=0, maximum=duration, interactive=True),
+            gr.update(value=duration, maximum=duration, interactive=True),
             "✓ 已恢复原始上传视频。",
+            None,
         )
 
     def apply_preset(name, state, capabilities):
@@ -520,31 +623,6 @@ def build_ui(api_url: str | None = None):
                             '上传后可预览 · 需要截取片段请展开下方裁剪工具'
                             '</div>'
                         )
-                        with gr.Accordion(
-                            "✂ 裁剪视频片段（可选）", open=False,
-                            elem_classes=["studio-trim-tools"],
-                        ):
-                            gr.Markdown(
-                                "使用明确的起止时间裁剪 MP4，不依赖内置剪刀弹层。"
-                                "裁剪后预览和 AI 编辑都会使用新的片段。"
-                            )
-                            trim_start = gr.Slider(
-                                0, 30, value=0, step=0.1,
-                                label="开始时间 · 秒", interactive=False,
-                            )
-                            trim_end = gr.Slider(
-                                0, 30, value=10, step=0.1,
-                                label="结束时间 · 秒", interactive=False,
-                            )
-                            with gr.Row():
-                                trim_button = gr.Button(
-                                    "应用裁剪", variant="secondary",
-                                    elem_classes=["studio-secondary-btn"],
-                                )
-                                restore_button = gr.Button(
-                                    "恢复原片", variant="secondary",
-                                    elem_classes=["studio-secondary-btn"],
-                                )
                         # Keep errors visible even while the trim panel is closed.
                         trim_status = gr.Markdown(
                             "尚未上传视频 · 拖入 MP4 或点击上传",
@@ -583,6 +661,110 @@ def build_ui(api_url: str | None = None):
                     "正在检测模型服务…",
                     elem_classes=["studio-composer-status"],
                 )
+            with gr.Accordion(
+                "✂ 时间轴裁剪与画面标记 · 查看起止帧 / 局部编辑",
+                open=False, elem_classes=["studio-visual-editor"],
+            ):
+                gr.Markdown(
+                    "**时间轴裁剪** · 滑动时间或点击下方关键帧，"
+                    "起点和终点的真实视频画面会同步显示。"
+                    "应用裁剪会生成新的 MP4，原视频不会被覆盖。"
+                )
+                with gr.Row(equal_height=False):
+                    with gr.Column(min_width=260):
+                        trim_start = gr.Slider(
+                            0, 30, step=0.1, value=0,
+                            label="裁剪起点 · 秒", interactive=False,
+                        )
+                        start_image = gr.Image(
+                            label="起点画面 · START", interactive=False,
+                            height=210, elem_classes=["studio-boundary-frame"],
+                        )
+                    with gr.Column(min_width=260):
+                        trim_end = gr.Slider(
+                            0, 30, step=0.1, value=10,
+                            label="裁剪终点 · 秒", interactive=False,
+                        )
+                        end_image = gr.Image(
+                            label="终点画面 · END", interactive=False,
+                            height=210, elem_classes=["studio-boundary-frame"],
+                        )
+                strip_target = gr.Radio(
+                    ["起点", "终点"], value="起点",
+                    label="点击关键帧设置", interactive=True,
+                )
+                frame_strip = gr.Gallery(
+                    label="视频关键帧 · 点击某一帧设置时间点",
+                    columns=8, rows=1, height=120,
+                    object_fit="contain", allow_preview=False,
+                    elem_classes=["studio-frame-strip"],
+                )
+                with gr.Row():
+                    trim_button = gr.Button(
+                        "✂ 应用裁剪", variant="primary",
+                        elem_classes=["studio-secondary-btn"],
+                    )
+                    restore_button = gr.Button(
+                        "↶ 恢复原视频", variant="secondary",
+                        elem_classes=["studio-secondary-btn"],
+                    )
+                gr.Markdown(
+                    "**画面标记** · 选择帧时间并载入画板，"
+                    "用画笔或橡皮标记希望处理的区域。"
+                    "标记可保存为图片/JSON；本地支持对标记区域打模糊，"
+                    "其他 AI 改衣服、换背景等仍需要具备区域编辑能力的模型。"
+                )
+                mark_second = gr.Slider(
+                    0, 30, step=0.1, value=0,
+                    label="载入标记画面的时间 · 秒", interactive=False,
+                )
+                mark_load = gr.Button(
+                    "↗ 载入该时间的画面并开始标记",
+                    elem_classes=["studio-secondary-btn"],
+                )
+                marker = gr.ImageEditor(
+                    label="画面标记画板 · 用画笔涂抹目标区域",
+                    height=430, type="pil",
+                    sources=[], transforms=[],
+                    brush=gr.Brush(
+                        colors=["#ff4057"], default_color="#ff4057",
+                        color_mode="fixed",
+                    ),
+                    elem_classes=["studio-mark-canvas"],
+                )
+                mark_instruction = gr.Textbox(
+                    label="区域编辑说明 / Prompt",
+                    placeholder="例如：标记区域是背景垃圾桶，希望移除；"
+                                "或先尝试本地局部模糊",
+                    lines=2,
+                )
+                with gr.Row():
+                    save_mark = gr.Button(
+                        "保存标注图片与说明", variant="secondary",
+                        elem_classes=["studio-secondary-btn"],
+                    )
+                    blur_button = gr.Button(
+                        "应用本地局部模糊（实际修改视频）",
+                        variant="primary",
+                        elem_classes=["studio-secondary-btn"],
+                    )
+                mark_status = gr.Markdown(
+                    "尚未载入标记画面。注意：固定区域模糊不会自动跟踪运动物体。",
+                    elem_classes=["studio-trim-status"],
+                )
+                local_export = gr.File(
+                    label="下载已裁剪 / 已模糊的本地 MP4",
+                    interactive=False,
+                )
+                with gr.Row():
+                    marked_preview = gr.Image(
+                        label="保存后的标记画面",
+                        interactive=False, height=220,
+                    )
+                    manifest_file = gr.File(
+                        label="标注信息 JSON（可下载）",
+                        interactive=False,
+                    )
             with gr.Accordion(
                 "创作建议与参数 · 可选",
                 open=False, elem_classes=["studio-extra-options"],
@@ -880,16 +1062,64 @@ def build_ui(api_url: str | None = None):
                 workspace, capability_notice,
                 edit_button, story_button, vision_button, submit_button,
                 selected_source, preview, trim_start, trim_end, trim_status,
+                local_export,
+            ],
+        )
+        # A gallery frame explicitly sets one of the two time boundaries.
+        frame_strip.select(
+            fn=choose_strip_frame,
+            inputs=[selected_source, strip_target],
+            outputs=[trim_start, trim_end],
+        )
+        trim_start.release(
+            fn=preview_boundary,
+            inputs=[selected_source, trim_start],
+            outputs=start_image,
+        )
+        trim_end.release(
+            fn=preview_boundary,
+            inputs=[selected_source, trim_end],
+            outputs=end_image,
+        )
+        selected_source.change(
+            fn=setup_visual_timeline,
+            inputs=[selected_source, trim_start, trim_end],
+            outputs=[
+                frame_strip, start_image, end_image,
+                mark_second, marker, mark_status,
+            ],
+        )
+        mark_load.click(
+            fn=mark_this_frame,
+            inputs=[selected_source, mark_second],
+            outputs=marker,
+        )
+        save_mark.click(
+            fn=save_frame_markup,
+            inputs=[marker, selected_source, mark_second, mark_instruction],
+            outputs=[marked_preview, manifest_file, mark_status],
+        )
+        blur_button.click(
+            fn=blur_marked_area,
+            inputs=[
+                selected_source, marker, trim_start, trim_end,
+                workspace, capability_state,
+            ],
+            outputs=[
+                selected_source, preview, workspace, capability_notice,
+                edit_button, story_button, vision_button, submit_button,
+                mark_status, local_export,
             ],
         )
         trim_button.click(
             fn=apply_trim,
             inputs=[
-                source, trim_start, trim_end, workspace, capability_state,
+                selected_source, trim_start, trim_end, workspace, capability_state,
             ],
             outputs=[
                 selected_source, preview, workspace, capability_notice,
-                edit_button, story_button, vision_button, submit_button, trim_status,
+                edit_button, story_button, vision_button, submit_button,
+                trim_start, trim_end, trim_status, local_export,
             ],
         )
         restore_button.click(
@@ -897,7 +1127,8 @@ def build_ui(api_url: str | None = None):
             inputs=[source, workspace, capability_state],
             outputs=[
                 selected_source, preview, workspace, capability_notice,
-                edit_button, story_button, vision_button, submit_button, trim_status,
+                edit_button, story_button, vision_button, submit_button,
+                trim_start, trim_end, trim_status, local_export,
             ],
         )
         for name, button in preset_buttons:

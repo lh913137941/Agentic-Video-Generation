@@ -229,3 +229,46 @@ body,.gradio-container {background:var(--studio-bg)!important}
 .studio-analysis h3 {font-size:16px;margin:0 0 8px;color:#263150}
 .studio-analysis h4 {font-size:13px;margin:15px 0 8px}
 .studio-analysis li {margin:4px 0}
+
+
+/* Unified wide visual editor, not a squeezed sidebar panel. */
+.studio-visual-editor {
+  border:1px solid #dfe3f1!important;
+  background:#fff!important;
+  border-radius:19px!important;
+  padding:6px 12px!important;
+  box-shadow:0 6px 22px rgba(31,39,72,.045)!important;
+}
+.studio-visual-editor > button {
+  font-size:14px!important;font-weight:760!important;
+  color:#26324b!important;min-height:47px!important
+}
+.studio-visual-editor .studio-boundary-frame {
+  border:1px solid #e4e7f2!important;
+  background:#141b2c!important;border-radius:13px!important;
+  overflow:hidden
+}
+.studio-visual-editor .studio-boundary-frame img {
+  object-fit:contain!important;
+  max-height:210px!important;
+}
+.studio-frame-strip {
+  border:1px solid #e4e7f1!important;
+  border-radius:12px!important;
+  background:#f8f9fd!important;
+  overflow-x:auto!important;
+}
+.studio-frame-strip img {object-fit:contain!important}
+.studio-mark-canvas {
+  border:1px solid #dfe4ef!important;
+  border-radius:13px!important;
+  background:#f8f9fc!important;
+  overflow:visible!important;
+}
+.studio-visual-editor .studio-secondary-btn {
+  min-height:42px!important;font-weight:700!important;
+}
+@media(max-width:900px) {
+  .studio-visual-editor {padding:5px!important}
+  .studio-frame-strip {overflow-x:auto!important}
+}

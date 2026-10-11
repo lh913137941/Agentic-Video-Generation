@@ -79,8 +79,15 @@ def test_gradio_has_one_creator_no_business_tabs():
             for c in components
         )
         labels = [c["props"].get("label") for c in components]
-        assert "开始时间 · 秒" in labels
-        assert "结束时间 · 秒" in labels
+        assert "裁剪起点 · 秒" in labels
+        assert "裁剪终点 · 秒" in labels
+        assert "起点画面 · START" in labels
+        assert "终点画面 · END" in labels
+        assert "画面标记画板 · 用画笔涂抹目标区域" in labels
+        assert "区域编辑说明 / Prompt" in labels
+        assert "下载已裁剪 / 已模糊的本地 MP4" in labels
+        assert sum(c["type"] == "imageeditor" for c in components) == 1
+        assert sum(c["type"] == "gallery" for c in components) >= 1
         prompt_fields = [
             c for c in components
             if c["type"] == "textbox"
@@ -135,3 +142,16 @@ def test_multimodal_model_output_safely_rendered():
     assert "&lt;script&gt;" in rendered
     assert "&lt;b&gt;" in rendered
     assert "0.6s" in rendered
+
+
+def test_timeline_markup_controls_have_real_action_events():
+    import inspect
+    from agentic_video import ui
+    source = inspect.getsource(ui.build_ui)
+    assert "frame_strip.select(" in source
+    assert "trim_start.release(" in source
+    assert "trim_end.release(" in source
+    assert "mark_load.click(" in source
+    assert "save_mark.click(" in source
+    assert "blur_button.click(" in source
+    assert "local_blur_region(" in source
