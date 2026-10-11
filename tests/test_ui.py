@@ -193,3 +193,19 @@ def test_jimeng_style_direct_frame_navigation():
     assert "outputs=[marker, mark_second, mark_status]" in source
     assert "studio-edit-command" in source
     assert "精确裁剪与本地处理（可选）" in source
+
+
+def test_marked_frame_visible_in_composer_after_save():
+    import inspect
+    from agentic_video import ui
+    source = inspect.getsource(ui.build_ui)
+    assert 'as annotation_card:' in source
+    assert 'label="已保存的标记画面"' in source
+    assert 'record_annotation(' in source
+    assert '还没有画面标记' in source
+    assert 'annotation_card, annotation_thumb, workspace, annotation_note' in source
+    assert 'outputs=[annotation_card, annotation_thumb]' in source
+    css = ui.STYLE_PATH.read_text(encoding="utf-8")
+    assert '#studio-edit-overlay .studio-edit-command {' in css
+    assert 'position:static!important;' in css
+    assert '.studio-annotation-card {' in css

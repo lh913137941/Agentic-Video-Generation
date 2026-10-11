@@ -69,6 +69,9 @@ def test_frame_preview_markup_export_and_local_blur(tmp_path):
         start=0.5, end=1.9
     )
     assert Path(image).is_file() and Path(metadata).is_file()
+    with Image.open(image) as saved:
+        assert saved.convert("RGB").getpixel((70, 50)) != (221, 221, 238)
+        assert saved.convert("RGB").getpixel((10, 10)) == (221, 221, 238)
     parsed = json.loads(Path(metadata).read_text(encoding="utf-8"))
     assert parsed["model_mask_consumed"] is False
     assert parsed["time_range_seconds"] == [0.5, 1.9]

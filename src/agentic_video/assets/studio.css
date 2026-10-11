@@ -590,3 +590,62 @@ html,body,.gradio-container {
  #studio-edit-overlay .studio-edit-window {padding:8px!important}
  #studio-edit-overlay .studio-editor-filmstrip {overflow-x:auto!important}
 }
+
+/* The save bar previously overlaid and hid the bottom of the video frame. */
+#studio-edit-overlay {
+  height:100dvh!important;
+  max-height:100dvh!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  align-items:flex-start!important;
+}
+#studio-edit-overlay .studio-edit-window {
+  height:auto!important;
+  max-height:none!important;
+  min-height:0!important;
+  overflow:visible!important;
+}
+#studio-edit-overlay .studio-edit-stage {overflow:visible!important}
+#studio-edit-overlay .studio-edit-canvas {
+  width:min(100%,1080px)!important;
+  max-width:1080px!important;
+  height:690px!important;
+  min-height:690px!important;
+  margin-inline:auto!important;
+  overflow:visible!important;
+}
+#studio-edit-overlay .studio-edit-canvas img {
+  object-fit:contain!important;
+  max-width:100%!important;
+  max-height:none!important;
+}
+#studio-edit-overlay .studio-edit-command {
+  position:static!important;
+  bottom:auto!important;
+  z-index:auto!important;
+  margin-top:10px!important;
+}
+.studio-annotation-card {
+  background:#25262b!important;
+  border:1px solid #514d6d!important;
+  border-radius:14px!important;
+  padding:10px!important;
+}
+.studio-annotation-heading {
+  display:flex;flex-direction:column;gap:3px;
+  font-size:13px;font-weight:750;color:#e3ddff;
+}
+.studio-annotation-heading span {
+  font-size:10px;font-weight:500;color:#aaa8be;
+}
+.studio-annotation-thumb img {
+  object-fit:contain!important;max-height:190px!important;
+}
+.studio-annotation-card p {color:#c6c4dc!important;font-size:11px!important}
+@media(max-width:850px) {
+  #studio-edit-overlay .studio-edit-canvas {
+    height:460px!important;
+    min-height:460px!important;
+    max-width:100%!important;
+  }
+}

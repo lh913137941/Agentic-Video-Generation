@@ -89,3 +89,17 @@ def test_vision_mode_builds_storyboard_without_unlocking_v2v():
     assert state["active"] == VISION
     switched = choose_mode(state, STORY)
     assert switched["analysis"] == state["analysis"]
+
+
+def test_marked_frame_state_is_retained_and_reset_on_new_video():
+    from agentic_video.workspace import record_annotation
+    state = attach_video(initial_workspace(), "a.mp4")
+    saved = record_annotation(state, "/tmp/mark.png", "/tmp/mark.json",
+                              "将外套改为红色", 1.2)
+    assert saved["annotation"]["preview"] == "/tmp/mark.png"
+    assert saved["annotation"]["frame_second"] == 1.2
+    assert saved["annotation"]["instruction"] == "将外套改为红色"
+    assert choose_mode(saved, STORY)["annotation"] == saved["annotation"]
+    assert attach_video(saved, "b.mp4")["annotation"] is None
+    with pytest.raises(ValueError):
+        record_annotation(saved, "", "/tmp/mark.json", "abc", 1.0)

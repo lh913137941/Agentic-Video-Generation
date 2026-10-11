@@ -19,6 +19,7 @@ from .visual_editor import (
 )
 from .workspace import (
     EDIT, STORY, VISION, append_event, attach_video, begin_submission, choose_mode,
+    record_annotation,
     has_active_job, initial_workspace, plan_submission, update_task,
 )
 
@@ -393,7 +394,7 @@ def build_ui(api_url: str | None = None):
             "填写想修改的内容，然后点击「保存并返回创作」。",
         )
 
-    def save_advanced_editor(editor, source, second, note, first, last):
+    def save_advanced_editor(editor, source, second, note, first, last, state):
         instruction = (note or "").strip()
         if not source:
             raise gr.Error("视频素材已失效，请重新上传")
@@ -401,22 +402,24 @@ def build_ui(api_url: str | None = None):
             raise gr.Error("请填写想如何调整画面的指令")
         if len(instruction) > 1500:
             raise gr.Error("编辑描述不得超过 1500 字")
+        # Never silently close this drawing dialog without a mark.
         if not editor or not editor.get("layers"):
-            return (
-                gr.update(visible=False), instruction, None, None,
-                "✓ 已保存文本指令。没有绘制标记，因此未创建标注文件。",
-            )
+            raise gr.Error("还没有画面标记。请用画笔涂抹需要修改的区域再保存。")
         try:
             marked, metadata, bounds = store_markup(
                 editor, source, second, instruction, first, last,
             )
         except (ValueError, RuntimeError) as exc:
             raise gr.Error(str(exc)) from exc
+        state = record_annotation(
+            state, marked, metadata, instruction, float(second)
+        )
         return (
             gr.update(visible=False), instruction, marked, metadata,
-            "✓ 标记与编辑要求已保存，并回填到主创作框。"
-            "标记可导出用于后续支持 Mask 的模型；"
-            "当前普通 V2V 接口尚不消费此标注。",
+            "✓ 标记已保存，创作主页现在可看到带标记的参考画面。",
+            gr.update(visible=True), gr.update(value=marked), state,
+            f"已保存 {float(second):.2f}s 的画面标记及修改要求。"
+            "这是标注参考图，原始视频尚未进行 AI 区域重绘。",
         )
 
     def save_frame_markup(editor, source, second, note, first, last):
@@ -690,6 +693,25 @@ def build_ui(api_url: str | None = None):
                             variant="secondary",
                             elem_classes=["studio-advanced-entry"],
                         )
+                        # Show a saved marked image beside the source on the
+                        # composer, instead of hiding it in a closed dialog.
+                        with gr.Group(
+                            visible=False, elem_classes=["studio-annotation-card"],
+                        ) as annotation_card:
+                            gr.HTML(
+                                '<div class="studio-annotation-heading">'
+                                '✓ 已保存画面标记'
+                                '<span>静态标注参考图 · 非 AI 编辑结果</span>'
+                                '</div>'
+                            )
+                            annotation_thumb = gr.Image(
+                                label="已保存的标记画面",
+                                interactive=False, height=190,
+                                elem_classes=["studio-annotation-thumb"],
+                            )
+                            annotation_note = gr.Markdown(
+                                "标记和修改要求已保存，可重新打开高级编辑。"
+                            )
                         gr.HTML(
                             '<div class="studio-composer-hint">'
                             '上传后点「高级编辑」，可直接在画面上标记并填写修改要求'
@@ -795,7 +817,7 @@ def build_ui(api_url: str | None = None):
                 with gr.Column(elem_classes=["studio-edit-stage"]):
                     marker = gr.ImageEditor(
                         label="直接在画面上标记目标",
-                        height=510, type="pil",
+                        height=690, type="pil",
                         sources=[], transforms=[],
                         brush=gr.Brush(
                             colors=["#ff4d68"], default_color="#ff4d68",
@@ -1209,6 +1231,11 @@ def build_ui(api_url: str | None = None):
             inputs=[frame_strip],
             outputs=[editor_frames],
         )
+        selected_source.change(
+            fn=lambda _: (gr.update(visible=False), gr.update(value=None)),
+            inputs=[selected_source],
+            outputs=[annotation_card, annotation_thumb],
+        )
         editor_frames.select(
             fn=choose_editor_frame,
             inputs=[selected_source],
@@ -1223,10 +1250,11 @@ def build_ui(api_url: str | None = None):
             fn=save_advanced_editor,
             inputs=[
                 marker, selected_source, mark_second, mark_instruction,
-                trim_start, trim_end,
+                trim_start, trim_end, workspace,
             ],
             outputs=[
                 edit_overlay, prompt, marked_preview, manifest_file, mark_status,
+                annotation_card, annotation_thumb, workspace, annotation_note,
             ],
         )
         blur_button.click(

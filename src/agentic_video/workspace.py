@@ -23,6 +23,7 @@ def initial_workspace() -> dict[str, Any]:
         "edit_job": None,
         "story_project": None,
         "analysis": None,
+        "annotation": None,
         "source_name": None,
         "timeline": [],
     }
@@ -57,6 +58,7 @@ def attach_video(state: dict[str, Any], file_path: str | None) -> dict[str, Any]
     previous = next_state.get("source_name")
     if next_name != previous:
         next_state["source_name"] = next_name
+        next_state["annotation"] = None
         if next_name:
             next_state = choose_mode(next_state, EDIT)
             next_state = append_event(next_state, "已添加视频素材，可使用「视频编辑」")
@@ -158,3 +160,20 @@ def has_active_job(state: dict[str, Any], mode: str) -> bool:
     key = "edit_job" if mode == EDIT else "story_project"
     task = (state or {}).get(key) or {}
     return task.get("status") in ACTIVE_STATUSES
+
+
+def record_annotation(
+    state: dict[str, Any], preview: str, manifest: str,
+    instruction: str, frame_second: float,
+) -> dict[str, Any]:
+    """Store the marked PNG and metadata within the current UI session."""
+    if not preview or not manifest or not instruction.strip():
+        raise ValueError("Incomplete saved annotation")
+    next_state = append_event(
+        state, f"已保存 {frame_second:.2f}s 画面标记，修改要求：{instruction[:140]}"
+    )
+    next_state["annotation"] = {
+        "preview": preview, "manifest": manifest,
+        "instruction": instruction, "frame_second": float(frame_second),
+    }
+    return next_state
