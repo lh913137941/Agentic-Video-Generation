@@ -27,7 +27,7 @@ def test_frame_sampling_boundaries_are_observable():
     values = timeline_seconds(5.09, 8)
     assert len(values) == 8
     assert values[0] == 0.0
-    assert 4.9 <= values[-1] <= 5.09
+    assert 4.8 <= values[-1] < 5.09
     assert sorted(values) == values
     with pytest.raises(ValueError):
         timeline_seconds(-1)

@@ -312,7 +312,7 @@ def build_ui(api_url: str | None = None):
             return (
                 make_filmstrip(source),
                 frame_at(source, first),
-                frame_at(source, max(0, last - 0.05)),
+                frame_at(source, max(0, last - 0.20)),
                 gr.update(value=first, maximum=duration, interactive=True),
                 frame_at(source, first),
                 "时间轴已加载。可选择关键帧设置起止位置，"
@@ -329,7 +329,7 @@ def build_ui(api_url: str | None = None):
         try:
             duration = inspect_source(source)
             return frame_at(source, min(max(float(sec), 0),
-                                        max(0, duration - 0.05)))
+                                        max(0, duration - 0.20)))
         except (ValueError, RuntimeError) as exc:
             raise gr.Error(f"无法显示指定时间的画面：{exc}") from exc
 
@@ -345,6 +345,10 @@ def build_ui(api_url: str | None = None):
         if side == "起点":
             return gr.update(value=moment), gr.skip()
         return gr.skip(), gr.update(value=moment)
+
+    # Future annotations stringize local gr.SelectData; give Gradio the
+    # actual event class for correct Gallery.select event injection.
+    choose_strip_frame.__annotations__["evt"] = gr.SelectData
 
     def mark_this_frame(source, second):
         if not source:

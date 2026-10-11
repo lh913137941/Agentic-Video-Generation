@@ -25,7 +25,9 @@ def timeline_seconds(duration: float, count: int = 8) -> list[float]:
     """Endpoints included so each video boundary has a corresponding frame."""
     if duration <= 0 or not 2 <= count <= 12:
         raise ValueError("Invalid filmstrip request")
-    end = max(0.0, duration - 0.06)
+    # The container duration may exceed the last decodable video frame.
+    # Leave a small safety margin rather than seeking past the final PTS.
+    end = max(0.0, duration - min(0.25, max(0.10, duration*0.10)))
     return [round(end * n / (count - 1), 2) for n in range(count)]
 
 
