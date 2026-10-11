@@ -909,127 +909,145 @@ def build_ui(api_url: str | None = None):
                         "✕", variant="secondary",
                         elem_classes=["studio-edit-close"],
                     )
-                with gr.Column(elem_classes=["studio-edit-stage"]):
-                    marker = gr.ImageEditor(
-                        label="直接在画面上标记目标",
-                        height=440, type="pil",
-                        sources=[], transforms=[],
-                        brush=gr.Brush(
-                            colors=["#ff4d68"], default_color="#ff4d68",
-                            color_mode="fixed",
-                        ),
-                        elem_classes=["studio-edit-canvas"],
-                    )
-                    gr.HTML(
-                        '<div class="studio-frame-caption">选择视频中的某个画面进行标记</div>'
-                    )
-                    editor_frames = gr.Gallery(
-                        label="点击缩略图切换标记画面",
-                        columns=8, rows=1, height=76,
-                        allow_preview=False, object_fit="contain",
-                        elem_classes=["studio-editor-filmstrip"],
-                    )
-                    with gr.Accordion(
-                        "精确定位画面 · 可选", open=False,
-                        elem_classes=["studio-frame-position"],
+                # Jimeng-style focused editing surface: canvas on the left,
+                # frame picker, prompt and the primary Save action on the right.
+                # No stacked full-page filmstrip or sticky input overlay.
+                with gr.Row(equal_height=False, elem_classes=["studio-edit-body"]):
+                    with gr.Column(
+                        scale=8, min_width=340,
+                        elem_classes=["studio-edit-canvas-pane"],
                     ):
-                        mark_second = gr.Slider(
-                            0, 30, step=0.1, value=0,
-                            label="当前画面时间 · 秒", interactive=False,
+                        marker = gr.ImageEditor(
+                            label="直接在画面上标记目标",
+                            height=600, type="pil",
+                            show_label=False, canvas_size=(960, 540),
+                            sources=[], transforms=[],
+                            brush=gr.Brush(
+                                colors=["#ff4d68"], default_color="#ff4d68",
+                                color_mode="fixed",
+                            ),
+                            elem_classes=["studio-edit-canvas"],
                         )
-                        mark_load = gr.Button(
-                            "跳到精确时间",
-                            size="sm", variant="secondary",
-                            elem_classes=["studio-secondary-btn"],
+                        gr.HTML(
+                            '<div class="studio-edit-canvas-help">'
+                            '画笔标记需要修改的区域 · 橡皮擦除 · 点击右侧画面切换帧'
+                            '</div>'
                         )
-                with gr.Row(elem_classes=["studio-edit-command"]):
-                    mark_instruction = gr.Textbox(
-                        label="描述如何调整画面",
-                        placeholder="例如：把标记的外套改成红色，保持人物、动作和背景不变…",
-                        lines=2, max_lines=4, scale=5,
-                    )
-                    save_mark = gr.Button(
-                        "保存并返回创作", variant="primary",
-                        elem_classes=["studio-edit-save"],
-                    )
-                mark_status = gr.Markdown(
-                    "可以直接在画面上画标记并保存。"
-                    "AI 区域重绘需要支持空间掩码的模型；"
-                    "目前可保存标注并进行本地固定区域模糊。",
-                    elem_classes=["studio-edit-status"],
-                )
-                with gr.Accordion(
-                    "精确裁剪与本地处理（可选）", open=False,
-                    elem_classes=["studio-edit-details"],
-                ):
-                    gr.Markdown(
-                        "裁剪前可查看起点/终点画面；标注后还可用 FFmpeg"
-                        " 对固定范围进行局部模糊。"
-                    )
-                    with gr.Row(equal_height=False):
-                        with gr.Column(min_width=240):
-                            trim_start = gr.Slider(
+                    with gr.Column(
+                        scale=3, min_width=285,
+                        elem_classes=["studio-edit-inspector"],
+                    ):
+                        gr.HTML(
+                            '<div class="studio-editor-subhead">'
+                            '<strong>选择画面</strong><span>点击缩略图切换标注帧</span>'
+                            '</div>'
+                        )
+                        editor_frames = gr.Gallery(
+                            label="点击缩略图切换标记画面",
+                            columns=4, rows=2, height=165,
+                            show_label=False,
+                            allow_preview=False, object_fit="cover",
+                            elem_classes=["studio-editor-filmstrip"],
+                        )
+                        with gr.Column(elem_classes=["studio-edit-command"]):
+                            mark_instruction = gr.Textbox(
+                                label="描述如何调整画面",
+                                placeholder="例如：将标记的衣服改成红色，保持其他内容不变…",
+                                lines=3, max_lines=5,
+                                elem_classes=["studio-mark-prompt"],
+                            )
+                            save_mark = gr.Button(
+                                "保存标记并返回创作", variant="primary",
+                                elem_classes=["studio-edit-save"],
+                            )
+                        mark_status = gr.Markdown(
+                            "涂抹目标并填写修改要求。标记保存为参考图；"
+                            "AI 局部重绘仍需要支持 Mask 的 V2V 模型。",
+                            elem_classes=["studio-edit-status"],
+                        )
+                        with gr.Accordion(
+                            "精确定位画面 · 可选", open=False,
+                            elem_classes=["studio-frame-position"],
+                        ):
+                            mark_second = gr.Slider(
                                 0, 30, step=0.1, value=0,
-                                label="裁剪起点 · 秒", interactive=False,
+                                label="当前画面时间 · 秒", interactive=False,
                             )
-                            start_image = gr.Image(
-                                label="起点画面 · START",
-                                height=170, interactive=False,
-                                elem_classes=["studio-boundary-frame"],
+                            mark_load = gr.Button(
+                                "跳到精确时间",
+                                size="sm", variant="secondary",
+                                elem_classes=["studio-secondary-btn"],
                             )
-                        with gr.Column(min_width=240):
-                            trim_end = gr.Slider(
-                                0, 30, step=0.1, value=10,
-                                label="裁剪终点 · 秒", interactive=False,
+                        with gr.Accordion(
+                            "精确裁剪与本地处理（可选）", open=False,
+                            elem_classes=["studio-edit-details"],
+                        ):
+                            gr.Markdown(
+                                "查看起点/终点并裁剪视频；或对标记的固定区域"
+                                "使用 FFmpeg 执行局部模糊。"
                             )
-                            end_image = gr.Image(
-                                label="终点画面 · END",
-                                height=170, interactive=False,
-                                elem_classes=["studio-boundary-frame"],
+                            with gr.Row(equal_height=False):
+                                with gr.Column(min_width=115):
+                                    trim_start = gr.Slider(
+                                        0, 30, step=0.1, value=0,
+                                        label="裁剪起点 · 秒", interactive=False,
+                                    )
+                                    start_image = gr.Image(
+                                        label="起点画面 · START",
+                                        height=120, interactive=False,
+                                        elem_classes=["studio-boundary-frame"],
+                                    )
+                                with gr.Column(min_width=115):
+                                    trim_end = gr.Slider(
+                                        0, 30, step=0.1, value=10,
+                                        label="裁剪终点 · 秒", interactive=False,
+                                    )
+                                    end_image = gr.Image(
+                                        label="终点画面 · END",
+                                        height=120, interactive=False,
+                                        elem_classes=["studio-boundary-frame"],
+                                    )
+                            strip_target = gr.Radio(
+                                ["起点", "终点"], value="起点",
+                                label="点击关键帧设置", interactive=True,
                             )
-                    strip_target = gr.Radio(
-                        ["起点", "终点"], value="起点",
-                        label="点击关键帧设置", interactive=True,
-                    )
-                    frame_strip = gr.Gallery(
-                        label="关键帧时间轴",
-                        columns=8, rows=1, height=115,
-                        allow_preview=False, object_fit="contain",
-                        elem_classes=["studio-frame-strip"],
-                    )
-                    with gr.Row():
-                        trim_button = gr.Button(
-                            "✂ 裁剪当前片段", variant="secondary",
-                            elem_classes=["studio-secondary-btn"],
-                        )
-                        restore_button = gr.Button(
-                            "↶ 恢复原片", variant="secondary",
-                            elem_classes=["studio-secondary-btn"],
-                        )
-                        blur_button = gr.Button(
-                            "对标记区域应用本地模糊",
-                            variant="secondary",
-                            elem_classes=["studio-secondary-btn"],
-                        )
-                    gr.Markdown(
-                        "局部模糊是真实的视频修改，但标记区域为固定矩形，"
-                        "不自动跟踪移动人物。"
-                    )
-                with gr.Accordion(
-                    "已保存的标注与本地视频", open=False,
-                    elem_classes=["studio-edit-exports"],
-                ):
-                    local_export = gr.File(
-                        label="下载处理后的 MP4", interactive=False,
-                    )
-                    with gr.Row():
-                        marked_preview = gr.Image(
-                            label="标记截图", interactive=False,
-                            height=200,
-                        )
-                        manifest_file = gr.File(
-                            label="标注数据 JSON", interactive=False,
-                        )
+                            frame_strip = gr.Gallery(
+                                label="关键帧时间轴",
+                                columns=4, rows=2, height=130,
+                                allow_preview=False, object_fit="contain",
+                                elem_classes=["studio-frame-strip"],
+                            )
+                            trim_button = gr.Button(
+                                "✂ 裁剪当前片段", variant="secondary",
+                                elem_classes=["studio-secondary-btn"],
+                            )
+                            restore_button = gr.Button(
+                                "↶ 恢复原片", variant="secondary",
+                                elem_classes=["studio-secondary-btn"],
+                            )
+                            blur_button = gr.Button(
+                                "对标记区域应用本地模糊",
+                                variant="secondary",
+                                elem_classes=["studio-secondary-btn"],
+                            )
+                            gr.Markdown(
+                                "局部模糊会生成新视频，但标记区域是静态矩形，"
+                                "不会自动跟踪移动的人物。"
+                            )
+                        with gr.Accordion(
+                            "已保存的标注与视频", open=False,
+                            elem_classes=["studio-edit-exports"],
+                        ):
+                            local_export = gr.File(
+                                label="下载处理后的 MP4", interactive=False,
+                            )
+                            marked_preview = gr.Image(
+                                label="标记截图", interactive=False,
+                                height=180,
+                            )
+                            manifest_file = gr.File(
+                                label="标注数据 JSON", interactive=False,
+                            )
 
         with gr.Column(elem_classes=["studio-workbench"]):
             gr.HTML(

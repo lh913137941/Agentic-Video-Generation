@@ -215,10 +215,10 @@ def test_viewport_adaptive_editor_and_explicit_v2v_configuration():
     import inspect
     from agentic_video import ui
     css = ui.STYLE_PATH.read_text(encoding="utf-8")
-    assert 'height:min(440px, 47dvh)!important' in css
+    assert 'height:calc(100dvh - 142px)!important' in css
     assert 'min-height:0!important' in css
-    assert 'max-height:47dvh!important' in css
-    assert 'height=440, type="pil"' in inspect.getsource(ui.build_ui)
+    assert 'overflow:hidden!important' in css
+    assert 'height=600, type="pil"' in inspect.getsource(ui.build_ui)
     assert "精确定位画面 · 可选" in inspect.getsource(ui.build_ui)
     src = inspect.getsource(ui.build_ui)
     assert "⚙ V2V 模型 API 配置" in src
@@ -226,3 +226,53 @@ def test_viewport_adaptive_editor_and_explicit_v2v_configuration():
     assert "save_local_v2v(" in src
     assert "save_provider.click(" in src
     assert "detect_provider.click(" in src
+
+
+def test_advanced_editor_uses_two_panes_and_no_legacy_stack():
+    import inspect
+    from agentic_video import ui
+    source = inspect.getsource(ui.build_ui)
+    css = ui.STYLE_PATH.read_text(encoding="utf-8")
+    assert 'elem_classes=["studio-edit-body"]' in source
+    assert 'elem_classes=["studio-edit-canvas-pane"]' in source
+    assert 'elem_classes=["studio-edit-inspector"]' in source
+    assert 'canvas_size=(960, 540)' in source
+    assert 'columns=4, rows=2, height=165' in source
+    assert 'elem_classes=["studio-edit-command"]' in source
+    assert 'save_mark.click(' in source
+    assert 'editor_frames.select(' in source
+    # Structural regression: no more multiple overlapping CSS generations.
+    assert "690px!important" not in css
+    assert "47dvh" not in css
+    assert "position:sticky!important" not in css
+    assert css.count("/* Advanced editor v3:") == 1
+    assert "overflow-y:auto!important" in css
+    assert "flex-direction:row!important" in css
+
+
+def test_advanced_editor_config_preserves_real_drawing_and_frame_selection():
+    import pytest
+    pytest.importorskip("gradio")
+    from agentic_video.ui import build_ui
+    demo = build_ui("http://127.0.0.1:8000")
+    try:
+        components = demo.config["components"]
+        editor = [c for c in components if c["type"] == "imageeditor"]
+        assert len(editor) == 1
+        assert editor[0]["props"]["height"] == 600
+        assert editor[0]["props"]["canvas_size"] == [960, 540]
+        frame = next(
+            c for c in components
+            if c["type"] == "gallery"
+            and c["props"].get("label") == "点击缩略图切换标记画面"
+        )
+        assert frame["props"]["columns"] == 4
+        assert frame["props"]["rows"] == 2
+        assert frame["props"]["height"] == 165
+        deps = demo.config["dependencies"]
+        assert any(
+            item.get("targets") and item.get("outputs")
+            for item in deps
+        )
+    finally:
+        demo.close()
