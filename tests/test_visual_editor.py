@@ -65,11 +65,13 @@ def test_frame_preview_markup_export_and_local_blur(tmp_path):
     assert filmstrip[0][1] == "0.0s"
 
     image, metadata, box = store_markup(
-        drawing(), str(original), 1.0, "将框选区域中的物体模糊"
+        drawing(), str(original), 1.0, "将框选区域中的物体模糊",
+        start=0.5, end=1.9
     )
     assert Path(image).is_file() and Path(metadata).is_file()
     parsed = json.loads(Path(metadata).read_text(encoding="utf-8"))
     assert parsed["model_mask_consumed"] is False
+    assert parsed["time_range_seconds"] == [0.5, 1.9]
     assert parsed["instruction"] == "将框选区域中的物体模糊"
     assert parsed["normalized_bbox"] == [round(n, 4) for n in box]
 

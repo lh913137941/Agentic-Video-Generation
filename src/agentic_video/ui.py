@@ -343,8 +343,14 @@ def build_ui(api_url: str | None = None):
         except (ValueError, TypeError, IndexError) as exc:
             raise gr.Error("无法选择关键帧") from exc
         if side == "起点":
-            return gr.update(value=moment), gr.skip()
-        return gr.skip(), gr.update(value=moment)
+            return (
+                gr.update(value=moment), gr.skip(),
+                preview_boundary(source, moment), gr.skip(),
+            )
+        return (
+            gr.skip(), gr.update(value=moment),
+            gr.skip(), preview_boundary(source, moment),
+        )
 
     # Future annotations stringize local gr.SelectData; give Gradio the
     # actual event class for correct Gallery.select event injection.
@@ -355,10 +361,10 @@ def build_ui(api_url: str | None = None):
             raise gr.Error("请先上传视频")
         return preview_boundary(source, second)
 
-    def save_frame_markup(editor, source, second, note):
+    def save_frame_markup(editor, source, second, note, first, last):
         try:
             marked, metadata, bounds = store_markup(
-                editor, source, second, note
+                editor, source, second, note, first, last
             )
         except (ValueError, RuntimeError) as exc:
             raise gr.Error(str(exc)) from exc
@@ -1073,7 +1079,7 @@ def build_ui(api_url: str | None = None):
         frame_strip.select(
             fn=choose_strip_frame,
             inputs=[selected_source, strip_target],
-            outputs=[trim_start, trim_end],
+            outputs=[trim_start, trim_end, start_image, end_image],
         )
         trim_start.release(
             fn=preview_boundary,
@@ -1100,7 +1106,8 @@ def build_ui(api_url: str | None = None):
         )
         save_mark.click(
             fn=save_frame_markup,
-            inputs=[marker, selected_source, mark_second, mark_instruction],
+            inputs=[marker, selected_source, mark_second, mark_instruction,
+                    trim_start, trim_end],
             outputs=[marked_preview, manifest_file, mark_status],
         )
         blur_button.click(

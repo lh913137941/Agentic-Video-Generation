@@ -18,7 +18,7 @@ agentic-video-api
 agentic-video-ui
 ```
 
-Open `http://127.0.0.1:7860` for the **single-page conversational creator workspace**. Uploads use a compact file attachment, stable video preview, and optional FFmpeg trim controls that replace the clipped in-video scissors UI. Upload an MP4 and explicitly choose **视频编辑** (requires a real V2V-capable backend), or type a script and choose **创作分镜** (works in Mock mode). The same page shows status events, video comparison, rough-cut preview and targeted shot regeneration. Uploaded MP4 files are never silently ignored by the storyboard workflow. API schema: `http://127.0.0.1:8000/docs`.
+Open `http://127.0.0.1:7860` for the **single-page conversational creator workspace**. Uploads use a compact file attachment, stable video preview, and a full-width visual timeline with START/END frame previews, selectable keyframes, painted image marks, true FFmpeg trimming and stationary region blur (downloadable MP4). These controls replace the clipped in-video scissors UI. Area-replacement AI editing still requires a compatible mask-aware V2V model; a saved mark alone does not perform semantic inpainting. Upload an MP4 and explicitly choose **视频编辑** (requires a real V2V-capable backend), or type a script and choose **创作分镜** (works in Mock mode). The same page shows status events, video comparison, rough-cut preview and targeted shot regeneration. Uploaded MP4 files are never silently ignored by the storyboard workflow. API schema: `http://127.0.0.1:8000/docs`.
 
 Mock mode (`AVG_BACKEND=mock`) is the default and creates playable silent color clips using FFmpeg; it does **not** generate AI visuals.
 

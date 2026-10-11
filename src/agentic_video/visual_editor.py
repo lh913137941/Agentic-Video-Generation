@@ -106,19 +106,25 @@ def annotation_bbox(editor: dict) -> tuple[float, float, float, float]:
     return (x0/w, y0/h, x1/w, y1/h)
 
 
-def store_markup(editor: dict, source: str, at: float, prompt: str):
+def store_markup(editor: dict, source: str, at: float, prompt: str,
+                 start: float | None = None, end: float | None = None):
     """Save a portable markup preview and JSON metadata without editing video."""
     from PIL import Image
 
     bounds = annotation_bbox(editor)
     if not source or not Path(source).is_file():
         raise MarkupError("原始素材不存在，请重新上传")
-    if not 0 <= float(at) <= inspect_source(source):
+    duration = inspect_source(source)
+    if not 0 <= float(at) <= duration:
         raise MarkupError("标记时间超出视频范围")
     if not prompt.strip():
         raise MarkupError("请描述标记区域需要如何修改")
     if len(prompt) > 1500:
         raise MarkupError("修改说明不得超过 1500 字")
+    if start is not None or end is not None:
+        if (start is None or end is None or
+            not (0 <= float(start) < float(end) <= duration + 0.05)):
+            raise MarkupError("标记生效时间范围无效")
     folder = Path(tempfile.mkdtemp(prefix="avg-markup-"))
     image = _read_layer(editor["background"])
     for entry in editor["layers"]:
@@ -135,6 +141,9 @@ def store_markup(editor: dict, source: str, at: float, prompt: str):
         "coordinate_system": "normalized_xyxy",
         "model_mask_consumed": False,
         "source_name": Path(source).name,
+        "time_range_seconds": ([round(float(start), 2),
+                                round(min(float(end), duration), 2)]
+                               if start is not None else None),
     }
     manifest = folder / "annotation.json"
     manifest.write_text(json.dumps(doc, ensure_ascii=False, indent=2),
