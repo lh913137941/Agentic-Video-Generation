@@ -56,7 +56,7 @@ class EditPlan(BaseModel):
     clips: list[EditClip] = Field(min_length=1, max_length=60)
     captions: list[Caption] = Field(default_factory=list, max_length=500)
     approval: Literal["pending", "approved"] = "pending"
-    planner: Literal["rules", "manual"] = "manual"
+    planner: Literal["rules", "manual", "llm"] = "manual"
 
     @property
     def duration_ms(self) -> int:
