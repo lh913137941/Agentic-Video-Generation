@@ -1,0 +1,119 @@
+"""P0 product gates: no GPU or commercial API required."""
+import json
+import shutil
+import subprocess
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+
+from agentic_video.edit_plan import (
+    Caption, EditClip, EditPlan, PlanRequest, TranscriptSegment, draft_plan,
+)
+from agentic_video.api import create_app, build_service
+from agentic_video.config import Settings
+
+
+def test_source_clock_and_output_clock_and_fail_closed():
+    segments = [
+        TranscriptSegment(start_ms=1000, end_ms=2200, text="第一句话"),
+        TranscriptSegment(start_ms=4200, end_ms=5500, text="第二句话"),
+    ]
+    p = draft_plan(segments, 6000, PlanRequest(
+        instruction="剪成竖屏并去停顿", target_seconds=5,
+    ), 1)
+    assert p.aspect == "9:16"
+    assert len(p.clips) == 2
+    assert p.clips[0].in_ms == 1000
+    assert p.clips[1].in_ms == 4200
+    assert p.captions[1].start_ms == 1200
+    assert p.approval == "pending"
+    assert p.planner == "rules"
+    with pytest.raises(ValueError, match="outside source"):
+        EditPlan(version=1, instruction="manual",
+                 clips=[EditClip(in_ms=5, out_ms=9000)]).validate_for_source(6000)
+    with pytest.raises(ValueError, match="Caption outside"):
+        EditPlan(version=1, instruction="manual",
+                 clips=[EditClip(in_ms=0, out_ms=1000)],
+                 captions=[Caption(start_ms=0, end_ms=1500, text="bad")]
+                 ).validate_for_source(6000)
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="requires actual FFmpeg")
+def test_upload_review_caption_render_and_retry_are_real(tmp_path, monkeypatch):
+    monkeypatch.setenv("AVG_DATA_DIR", str(tmp_path / "data"))
+    src = tmp_path / "source.mp4"
+    subprocess.run([
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc2=size=256x144:rate=15",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
+        "-t", "3", "-c:v", "libx264", "-c:a", "aac",
+        "-pix_fmt", "yuv420p", "-threads", "2", str(src),
+    ], check=True, timeout=50)
+    service = build_service(Settings(data_dir=tmp_path / "data"))
+    app = create_app(service)
+    app.state.p0_editing.render_edge = 144  # keep CI CPU cost tiny
+    with TestClient(app) as client:
+        with src.open("rb") as stream:
+            created = client.post("/api/mvp/projects", files={
+                "file": ("source.mp4", stream, "video/mp4")
+            })
+        assert created.status_code == 201, created.text
+        project_id = created.json()["id"]
+        assert created.json()["source_has_audio"] is True
+        assert client.get("/api/mvp/projects/" + project_id + "/source").status_code == 200
+
+        r = client.put(f"/api/mvp/projects/{project_id}/transcript", json={
+            "segments": [
+                {"start_ms": 200, "end_ms": 1200, "text": "镜头一"},
+                {"start_ms": 1900, "end_ms": 2700, "text": "镜头二"},
+            ]
+        })
+        assert r.status_code == 200, r.text
+        p = client.post(f"/api/mvp/projects/{project_id}/plans", json={
+            "instruction": "去停顿，转为9:16竖屏，自动字幕",
+            "target_seconds": 5,
+        })
+        assert p.status_code == 200, p.text
+        plan = p.json()
+        assert plan["approval"] == "pending" and len(plan["clips"]) == 2
+        assert client.post(f"/api/mvp/projects/{project_id}/renders?version=1").status_code == 409
+        # Manual correction creates revision 2 and resets human approval.
+        update = client.patch(f"/api/mvp/projects/{project_id}/plans/1", json={
+            "clips": plan["clips"], "captions": plan["captions"], "aspect": "9:16",
+        })
+        assert update.status_code == 200, update.text
+        assert update.json()["version"] == 2
+        assert client.post(f"/api/mvp/projects/{project_id}/plans/1/approve").status_code == 409
+        assert client.post(f"/api/mvp/projects/{project_id}/plans/2/approve").status_code == 200
+        queued = client.post(f"/api/mvp/projects/{project_id}/renders?version=2")
+        assert queued.status_code == 202, queued.text
+        job_id = queued.json()["id"]
+        repeated = client.post(f"/api/mvp/projects/{project_id}/renders?version=2")
+        assert repeated.json()["id"] == job_id
+        state = None
+        for _ in range(160):
+            state = client.get(f"/api/mvp/projects/{project_id}/renders/{job_id}").json()
+            if state["status"] in ("READY", "FAILED"):
+                break
+            time.sleep(.15)
+        assert state["status"] == "READY", state
+        assert state["metrics"]["width"] == 144
+        assert state["metrics"]["height"] == 256
+        assert state["metrics"]["has_audio"] is True
+        assert state["metrics"]["captions"] == 2
+        assert client.get(f"/api/mvp/projects/{project_id}/renders/{job_id}/file").content[4:8] == b"ftyp"
+        assert client.post(f"/api/mvp/projects/{project_id}/renders?version=2").json()["id"] == job_id
+    # Completed results and edit plans persist across restarts.
+    app2 = create_app(build_service(Settings(data_dir=tmp_path / "data")))
+    with TestClient(app2) as client:
+        assert client.get(f"/api/mvp/projects/{project_id}/plans/2").json()["approval"] == "approved"
+        assert client.get(f"/api/mvp/projects/{project_id}/renders/{job_id}").json()["status"] == "READY"
+
+
+def test_malformed_timestamps_rejected():
+    with pytest.raises(ValueError):
+        draft_plan([TranscriptSegment(start_ms=500, end_ms=1800, text="late"),
+                    TranscriptSegment(start_ms=1200, end_ms=1900, text="overlap")],
+                   2500, PlanRequest(instruction="摘要"), version=1)
