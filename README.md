@@ -1,3 +1,16 @@
+## P0: Long speech video → editable short (new)
+
+A separate, non-generative P0 editing loop now supports local MP4 upload, optional faster-whisper ASR, manual transcript correction, grounded rule/LLM EditPlan, explicit human approval, and verified FFmpeg audio-preserving subtitled MP4 export. Existing storyboard and V2V flows are untouched.
+
+```bash
+python -m pip install -e ".[ui,test,asr]"
+agentic-video-api
+# In another terminal
+agentic-video-mvp  # http://127.0.0.1:7861
+```
+
+See [docs/p0_transcript_editing_mvp.md](docs/p0_transcript_editing_mvp.md) for requirements, JSON timecode contracts, ASR/model settings, APIs, end-to-end tests and known limitations. This is a bounded MVP, not a complete visual NLE.
+
 # Agentic Video Generation
 
 A storyboard-first, extensible **script → shots → generated clips → rough-cut MP4** demo. The first working milestone uses **FastAPI + asyncio + Gradio + FFmpeg**; vLLM-Omni is an optional remote inference backend.
