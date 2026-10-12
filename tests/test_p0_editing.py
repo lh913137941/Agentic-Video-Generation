@@ -138,3 +138,26 @@ def test_llm_plan_is_grounded_and_unapproved():
         plan_from_ids(rows, [3], request, 2, 9000)
     with pytest.raises(ValueError, match="unordered"):
         plan_from_ids(rows, [2, 1], request, 2, 9000)
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="requires actual FFmpeg")
+def test_no_audio_source_renders_with_explicit_silent_track(tmp_path):
+    from agentic_video.edit_executor import probe_media, render_edit_plan
+    source = tmp_path / "mute.mp4"
+    target = tmp_path / "vertical.mp4"
+    subprocess.run([
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=12",
+        "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-threads", "2", str(source)
+    ], check=True, timeout=50)
+    original = source.read_bytes()
+    p = EditPlan(version=1, instruction="mute preview", approval="approved",
+                 aspect="9:16",
+                 clips=[EditClip(in_ms=200, out_ms=1400)])
+    report = render_edit_plan(source, p, target, short_edge=144)
+    assert report["source_has_audio"] is False
+    assert report["has_audio"] is True
+    assert report["width"] == 144 and report["height"] == 256
+    assert probe_media(target)[1] is True
+    assert source.read_bytes() == original
