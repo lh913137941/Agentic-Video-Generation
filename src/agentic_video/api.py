@@ -13,6 +13,7 @@ from .composer import FFmpegComposer
 from .editor import EditingUnavailable, EditJob, VideoEditService
 from .config import Settings
 from .fal_video import FalWanEditBackend
+from .mvp_api import EditingMVP, create_p0_router
 from .models import (
     CreateProjectRequest, Project, ProjectStatus, ShotStatus, UpdateShotRequest,
 )
@@ -66,6 +67,7 @@ def create_app(
             timeout_seconds=cfg.vision_timeout_seconds,
         ))
     vision_limiter = asyncio.Semaphore(2)
+    p0_mvp = EditingMVP(service.store.root)
     edit_backend = (
         FalWanEditBackend(cfg.fal_api_key, cfg.fal_model, cfg.job_timeout_seconds)
         if cfg.backend == "fal" else service.backend
@@ -84,9 +86,11 @@ def create_app(
     async def lifespan(app: FastAPI):
         service.store.recover_interrupted()
         editor.recover_interrupted()
+        p0_mvp.recover()
         try:
             yield
         finally:
+            await p0_mvp.close()
             await editor.close()
             await service.close()
 
@@ -95,6 +99,8 @@ def create_app(
     )
     app.state.video_service = service
     app.state.video_editor = editor
+    app.state.p0_editing = p0_mvp
+    app.include_router(create_p0_router(p0_mvp))
     app.state.vision_analyzer = analyzer
 
     def guard(fn, *args):

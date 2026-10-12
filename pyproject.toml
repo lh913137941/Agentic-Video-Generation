@@ -17,12 +17,14 @@ dependencies = [
 
 [project.optional-dependencies]
 ui = ["gradio>=5,<7"]
+asr = ["faster-whisper>=1.1,<2"]
 v2v = ["fal-client>=0.7"]
 test = ["pytest>=8,<10"]
 
 [project.scripts]
 agentic-video-api = "agentic_video.api:main"
 agentic-video-ui = "agentic_video.ui:main"
+agentic-video-mvp = "agentic_video.mvp_ui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
