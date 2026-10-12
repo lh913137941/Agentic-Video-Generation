@@ -67,6 +67,14 @@ def build_ui(api_url: str | None = None):
         })
         return result["version"], json.dumps(result, ensure_ascii=False, indent=2), "草案已生成，等待人工审阅"
 
+    def agent_plan(project_id, prompt, duration):
+        if not project_id:
+            raise gr.Error("请先上传视频")
+        result = send("POST", f"/api/mvp/projects/{project_id}/plans/agent", payload={
+            "instruction": prompt, "target_seconds": int(duration), "captions": True,
+        })
+        return result["version"], json.dumps(result, ensure_ascii=False, indent=2), "LLM 草案已生成，请审阅来源时间戳后批准"
+
     def revise(project_id, version, plan_json):
         try:
             plan_obj = json.loads(plan_json)
@@ -128,7 +136,8 @@ def build_ui(api_url: str | None = None):
                 manual_btn = gr.Button("保存人工转写")
                 instruction = gr.Textbox(label="剪辑要求", value="做成45秒9:16竖屏短视频，去掉停顿，加中文字幕")
                 target = gr.Slider(5, 90, value=45, step=1, label="目标时长 / 秒")
-                plan_btn = gr.Button("3. 生成可审阅剪辑草案")
+                plan_btn = gr.Button("3. 生成规则剪辑草案")
+                agent_btn = gr.Button("3a. LLM 语义选段（需配置模型）")
         edit_json = gr.Code(label="EditPlan（修改 clips 来源时间码、字幕和画幅后保存）",
                             language="json", lines=18)
         with gr.Row():
@@ -142,6 +151,7 @@ def build_ui(api_url: str | None = None):
         asr_btn.click(transcribe, [project_id], [transcript, notice])
         manual_btn.click(save_transcript, [project_id, transcript], [transcript, notice])
         plan_btn.click(plan, [project_id, instruction, target], [version, edit_json, notice])
+        agent_btn.click(agent_plan, [project_id, instruction, target], [version, edit_json, notice])
         save_btn.click(revise, [project_id, version, edit_json], [version, edit_json, notice])
         approve_btn.click(approve, [project_id, version], [edit_json, notice])
         render_btn.click(start_render, [project_id, version], [job_id, render_state])
