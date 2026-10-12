@@ -117,3 +117,24 @@ def test_malformed_timestamps_rejected():
         draft_plan([TranscriptSegment(start_ms=500, end_ms=1800, text="late"),
                     TranscriptSegment(start_ms=1200, end_ms=1900, text="overlap")],
                    2500, PlanRequest(instruction="摘要"), version=1)
+
+def test_llm_plan_is_grounded_and_unapproved():
+    from agentic_video.edit_agent import plan_from_ids
+    rows = [
+        TranscriptSegment(start_ms=500, end_ms=1500, text="开头介绍"),
+        TranscriptSegment(start_ms=5000, end_ms=6500, text="关键观点"),
+        TranscriptSegment(start_ms=7300, end_ms=8500, text="结束语"),
+    ]
+    request = PlanRequest(instruction="保留关键观点，改成9:16竖屏", target_seconds=5)
+    result = plan_from_ids(rows, [1], request, 2, 9000)
+    assert result.planner == "llm"
+    assert result.approval == "pending"
+    assert result.clips[0].in_ms == 5000
+    assert result.captions[0].start_ms == 0
+    assert result.aspect == "9:16"
+    with pytest.raises(ValueError, match="duplicate"):
+        plan_from_ids(rows, [1, 1], request, 2, 9000)
+    with pytest.raises(ValueError, match="nonexistent"):
+        plan_from_ids(rows, [3], request, 2, 9000)
+    with pytest.raises(ValueError, match="unordered"):
+        plan_from_ids(rows, [2, 1], request, 2, 9000)
