@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .edit_executor import MAX_SOURCE_BYTES, probe_media, render_edit_plan
+from .edit_agent import plan_from_ids, select_segment_ids
 from .edit_plan import (
     TranscriptSegment, EditPlan, PlanPatch, PlanRequest,
     draft_plan, validate_transcript,
@@ -215,6 +216,27 @@ class EditingMVP:
             self.save(record)
             return plan
 
+    async def make_agent_plan(self, project_id: str, request: PlanRequest) -> EditPlan:
+        async with self.lock(project_id):
+            record = self.get(project_id)
+            if self.busy(record):
+                raise _Conflict("Cannot plan during render")
+            if not record.transcript:
+                raise ValueError("Run ASR or provide a transcript first")
+            ids = await select_segment_ids(
+                record.transcript, request,
+                base_url=os.getenv("AVG_P0_LLM_URL", os.getenv("AVG_LLM_URL", "http://127.0.0.1:8001")),
+                model=os.getenv("AVG_P0_LLM_MODEL", ""),
+                api_key=os.getenv("AVG_P0_LLM_API_KEY", ""),
+            )
+            plan = plan_from_ids(
+                record.transcript, ids, request,
+                len(record.plans) + 1, record.duration_ms,
+            )
+            record.plans.append(plan)
+            self.save(record)
+            return plan
+
     async def patch_plan(self, project_id: str, version: int, patch: PlanPatch) -> EditPlan:
         async with self.lock(project_id):
             record = self.get(project_id)
@@ -336,7 +358,7 @@ def create_p0_router(mvp: EditingMVP) -> APIRouter:
     @router.get("/capabilities")
     async def capabilities():
         return {"asr_installed": find_spec("faster_whisper") is not None,
-                "transcript_manual_fallback": True, "planner": "rules",
+                "transcript_manual_fallback": True, "planner": "rules", "llm_planner_configured": bool(os.getenv("AVG_P0_LLM_MODEL")),
                 "requires_human_approval": True, "v2v": False}
 
     @router.post("/projects", response_model=P0Project, status_code=201)
@@ -389,6 +411,19 @@ def create_p0_router(mvp: EditingMVP) -> APIRouter:
             raise HTTPException(409, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+
+    @router.post("/projects/{project_id}/plans/agent", response_model=EditPlan)
+    async def make_agent_plan(project_id: str, request: PlanRequest):
+        try:
+            return await mvp.make_agent_plan(project_id, request)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except _Conflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
 
     @router.get("/projects/{project_id}/plans/{version}", response_model=EditPlan)
     async def get_plan(project_id: str, version: int):
